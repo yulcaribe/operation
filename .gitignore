@@ -1,0 +1,4 @@
+.DS_Store
+error_log
+admin/error_log
+*.log
