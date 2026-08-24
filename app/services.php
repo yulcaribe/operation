@@ -448,6 +448,7 @@ final class ProcessService
 final class ImportService
 {
     private const MAX_ROWS = 2000;
+    private const STATION_CODE = 'AYT';
     private static ?array $airlinesByIcao = null;
     private static ?array $flightTypesByCode = null;
 
@@ -467,19 +468,6 @@ final class ImportService
     public static function rows(int $batchId): array
     {
         $rows = DB::fetchAll('SELECT * FROM flight_import_rows WHERE batch_id = ? ORDER BY source_row_number', [$batchId]);
-        foreach ($rows as &$row) $row['data'] = json_decode((string)$row['payload'], true) ?: [];
-        unset($row);
-        return $rows;
-    }
-
-    public static function rowsPage(int $batchId, int $limit, int $offset): array
-    {
-        $limit = max(1, min(100, $limit));
-        $offset = max(0, $offset);
-        $rows = DB::fetchAll(
-            'SELECT * FROM flight_import_rows WHERE batch_id = ? ORDER BY source_row_number LIMIT ' . $limit . ' OFFSET ' . $offset,
-            [$batchId]
-        );
         foreach ($rows as &$row) $row['data'] = json_decode((string)$row['payload'], true) ?: [];
         unset($row);
         return $rows;
@@ -509,19 +497,34 @@ final class ImportService
             $arrivalNo = self::normalizeFlightNumber($rawRow[1] ?? '');
             $departureNo = self::normalizeFlightNumber($rawRow[2] ?? '');
             if ($arrivalNo === null && $departureNo === null) continue;
+            $arrivalAt = $arrivalNo !== null ? self::combineFlightDateAndTime($flightDate, $rawRow[8] ?? '') : null;
+            $departureAt = $departureNo !== null ? self::combineFlightDateAndTime($flightDate, $rawRow[9] ?? '') : null;
             $importRows[] = [
                 'source_row_number' => $rowIndex + 1,
                 'source' => [
                     'airline_icao' => self::normalizeAirlineCode($rawRow[0] ?? ''),
                     'arrival_flight_number' => $arrivalNo,
                     'departure_flight_number' => $departureNo,
-                    'scheduled_arrival_at' => $arrivalNo !== null ? $flightDate : null,
-                    'scheduled_departure_at' => $departureNo !== null ? $flightDate : null,
+                    'arrival_origin' => strtoupper(trim((string)($rawRow[7] ?? ''))),
+                    'arrival_destination' => $arrivalNo !== null ? self::STATION_CODE : '',
+                    'departure_origin' => $departureNo !== null ? self::STATION_CODE : '',
+                    'departure_destination' => strtoupper(trim((string)($rawRow[10] ?? ''))),
+                    'scheduled_arrival_at' => $arrivalAt,
+                    'scheduled_departure_at' => $departureAt,
+                    'estimated_arrival_at' => self::combineFlightDateAndTime($flightDate, $rawRow[4] ?? ''),
+                    'estimated_departure_at' => self::combineFlightDateAndTime($flightDate, $rawRow[12] ?? ''),
+                    'excel_eaf_at' => self::combineFlightDateAndTime($flightDate, $rawRow[5] ?? ''),
+                    'arrival_g2' => strtoupper(trim((string)($rawRow[6] ?? ''))),
+                    'departure_g2' => strtoupper(trim((string)($rawRow[11] ?? ''))),
+                    'aircraft_type' => strtoupper(trim((string)($rawRow[13] ?? ''))),
+                    'registration_arrival' => strtoupper(trim((string)($rawRow[14] ?? ''))),
+                    'registration' => strtoupper(trim((string)($rawRow[15] ?? ''))),
+                    'registration_departure' => strtoupper(trim((string)($rawRow[16] ?? ''))),
                     'stand' => trim((string)($rawRow[3] ?? '')),
                 ],
             ];
         }
-        if (!$importRows) throw new RuntimeException('İlk sayfanın A:D kolonlarında kullanılabilir geliş veya gidiş uçuşu bulunamadı.');
+        if (!$importRows) throw new RuntimeException('İlk sayfanın A:Q kolonlarında kullanılabilir geliş veya gidiş uçuşu bulunamadı.');
         if (count($importRows) > self::MAX_ROWS) throw new RuntimeException('Tek dosyada en fazla ' . self::MAX_ROWS . ' uçuş işlenebilir.');
         $hash = hash_file('sha256', (string)$file['tmp_name']);
         if (!is_string($hash)) throw new RuntimeException('Yüklenen dosyanın özeti hesaplanamadı.');
@@ -569,6 +572,38 @@ final class ImportService
         } catch (Throwable $error) { DB::rollback(); throw $error; }
     }
 
+    public static function deleteRows(array $actor, int $batchId, array $rowIds): void
+    {
+        Authorization::require($actor, 'imports.stage');
+        $batch = self::batch($batchId);
+        if (!$batch || $batch['status'] !== 'preview') throw new RuntimeException('Bu importtan artık satır silinemez.');
+        $rowIds = array_values(array_unique(array_filter(array_map('intval', $rowIds), static fn(int $id): bool => $id > 0)));
+        if (!$rowIds) throw new RuntimeException('Silinecek uçuş seçilmedi.');
+        $placeholders = implode(', ', array_fill(0, count($rowIds), '?'));
+        DB::begin();
+        try {
+            $existingRows = DB::fetchAll(
+                'SELECT id FROM flight_import_rows WHERE batch_id = ? AND id IN (' . $placeholders . ')',
+                array_merge([$batchId], $rowIds)
+            );
+            $rowIds = array_map('intval', array_column($existingRows, 'id'));
+            if (!$rowIds) throw new RuntimeException('Seçilen uçuşlar bu önizlemede bulunamadı.');
+            $placeholders = implode(', ', array_fill(0, count($rowIds), '?'));
+            DB::execute(
+                'DELETE FROM flight_import_rows WHERE batch_id = ? AND id IN (' . $placeholders . ')',
+                array_merge([$batchId], $rowIds)
+            );
+            $remaining = DB::fetch('SELECT COUNT(*) AS total FROM flight_import_rows WHERE batch_id = ?', [$batchId]);
+            DB::execute('UPDATE flight_import_batches SET total_rows = ? WHERE id = ?', [(int)($remaining['total'] ?? 0), $batchId]);
+            self::revalidateDuplicateStatuses($batchId);
+            Audit::record((int)$actor['id'], 'import.rows_deleted', 'flight_import_batch', $batchId, [
+                'deleted_count' => count($rowIds),
+                'row_ids' => $rowIds,
+            ]);
+            DB::commit();
+        } catch (Throwable $error) { DB::rollback(); throw $error; }
+    }
+
     public static function commit(array $actor, int $batchId): void
     {
         Authorization::require($actor, 'imports.commit');
@@ -576,6 +611,7 @@ final class ImportService
         if (!$batch || $batch['status'] !== 'preview') throw new RuntimeException('Import onay beklemiyor veya zaten işlendi.');
         self::revalidateDuplicateStatuses($batchId);
         $rows = self::rows($batchId);
+        if (!$rows) throw new RuntimeException('SQL aktarımı için en az bir uçuş bırakılmalıdır.');
         $invalid = array_filter($rows, static fn(array $row): bool => $row['status'] === 'invalid');
         if ($invalid) throw new RuntimeException('Hatalı satırlar düzeltilmeden SQL importu başlatılamaz.');
 
@@ -627,11 +663,18 @@ final class ImportService
             'departure_origin' => $source['departure_origin'] ?? '', 'departure_destination' => $source['departure_destination'] ?? '',
             'scheduled_arrival_at' => self::spreadsheetDate($source['scheduled_arrival_at'] ?? ''), 'estimated_arrival_at' => self::spreadsheetDate($source['estimated_arrival_at'] ?? ''),
             'scheduled_departure_at' => self::spreadsheetDate($source['scheduled_departure_at'] ?? ''), 'estimated_departure_at' => self::spreadsheetDate($source['estimated_departure_at'] ?? ''),
-            'tail_number' => $source['tail_number'] ?? '', 'aircraft_type' => $source['aircraft_type'] ?? '', 'stand' => $source['stand'] ?? '', 'note' => $source['note'] ?? '',
+            'tail_number' => ($source['registration'] ?? '') ?: (($source['registration_arrival'] ?? '') ?: ($source['registration_departure'] ?? '')),
+            'aircraft_type' => $source['aircraft_type'] ?? '', 'stand' => $source['stand'] ?? '', 'note' => $source['note'] ?? '',
             'status' => 'scheduled', 'source' => 'excel',
         ]);
         $payload['airline_icao'] = $icao;
         $payload['flight_type'] = $typeCode;
+        $payload['excel_eaf_at'] = self::spreadsheetDate($source['excel_eaf_at'] ?? '');
+        $payload['arrival_g2'] = nullable_string(strtoupper((string)($source['arrival_g2'] ?? '')));
+        $payload['departure_g2'] = nullable_string(strtoupper((string)($source['departure_g2'] ?? '')));
+        $payload['registration_arrival'] = nullable_string(strtoupper((string)($source['registration_arrival'] ?? '')));
+        $payload['registration'] = nullable_string(strtoupper((string)($source['registration'] ?? '')));
+        $payload['registration_departure'] = nullable_string(strtoupper((string)($source['registration_departure'] ?? '')));
         $sourceKey = hash('sha256', implode('|', [$icao, $arrivalNo, $departureNo, $payload['scheduled_arrival_at'], $payload['scheduled_departure_at']]));
         $payload['source_key'] = $sourceKey;
         $errors = FlightService::validate($payload, false);
@@ -732,6 +775,34 @@ final class ImportService
         return date('Y-m-d 00:00:00');
     }
 
+    private static function combineFlightDateAndTime(string $flightDate, mixed $timeValue): ?string
+    {
+        $time = self::spreadsheetTime($timeValue);
+        if ($time === null) return null;
+        $date = new DateTimeImmutable(substr($flightDate, 0, 10));
+        if (is_numeric($timeValue)) {
+            $dayOffset = max(0, (int)floor((float)$timeValue));
+            if ($dayOffset > 0 && $dayOffset < 100) $date = $date->modify('+' . $dayOffset . ' days');
+        }
+        return $date->format('Y-m-d') . ' ' . $time;
+    }
+
+    private static function spreadsheetTime(mixed $value): ?string
+    {
+        if (is_numeric($value)) {
+            $fraction = fmod(max(0.0, (float)$value), 1.0);
+            $seconds = (int)round($fraction * 86400) % 86400;
+            return sprintf('%02d:%02d:%02d', intdiv($seconds, 3600), intdiv($seconds % 3600, 60), $seconds % 60);
+        }
+        $text = trim((string)$value);
+        if ($text === '') return null;
+        if (preg_match('/^(\d{1,2})[:.](\d{2})(?::(\d{2}))?$/', $text, $match)) {
+            return sprintf('%02d:%02d:%02d', (int)$match[1], (int)$match[2], (int)($match[3] ?? 0));
+        }
+        $timestamp = strtotime($text);
+        return $timestamp ? date('H:i:s', $timestamp) : null;
+    }
+
     private static function spreadsheetDate(mixed $value): ?string
     {
         if (is_numeric($value) && (float)$value > 20000) {
@@ -750,7 +821,7 @@ final class ImportService
         $delimiter = substr_count($first, ';') > substr_count($first, ',') ? ';' : ',';
         $rows = [];
         while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
-            $row = array_slice($row, 0, 4);
+            $row = array_slice($row, 0, 17);
             if (array_filter($row, static fn($value): bool => trim((string)$value) !== '')) $rows[] = $row;
             if (count($rows) > self::MAX_ROWS + 1) break;
         }
@@ -790,7 +861,7 @@ final class ImportService
                 $index = 0;
                 foreach (str_split($letters) as $letter) $index = $index * 26 + (ord($letter) - 64);
                 $index--;
-                if ($index > 3) continue;
+                if ($index > 16) continue;
                 $type = (string)$cell['t'];
                 $value = $type === 'inlineStr' ? (string)$cell->is->t : (string)$cell->v;
                 if ($type === 's') $value = $shared[(int)$value] ?? '';

@@ -31,4 +31,24 @@
             });
         });
     });
+
+    const reviewSelectAll = document.querySelector('[data-review-select-all]');
+    const reviewSelections = Array.from(document.querySelectorAll('[data-review-select]'));
+    const reviewSelectionCount = document.querySelector('[data-review-selection-count]');
+    const reviewBulkDelete = document.querySelector('[data-review-bulk-delete]');
+    if (reviewSelectAll && reviewSelections.length) {
+        const syncReviewSelection = () => {
+            const selected = reviewSelections.filter((box) => box.checked).length;
+            reviewSelectAll.checked = selected === reviewSelections.length;
+            reviewSelectAll.indeterminate = selected > 0 && selected < reviewSelections.length;
+            if (reviewSelectionCount) reviewSelectionCount.textContent = `${selected} uçuş seçili`;
+            if (reviewBulkDelete) reviewBulkDelete.disabled = selected === 0;
+        };
+        reviewSelectAll.addEventListener('change', () => {
+            reviewSelections.forEach((box) => { box.checked = reviewSelectAll.checked; });
+            syncReviewSelection();
+        });
+        reviewSelections.forEach((box) => box.addEventListener('change', syncReviewSelection));
+        syncReviewSelection();
+    }
 })();

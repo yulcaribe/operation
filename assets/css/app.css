@@ -118,6 +118,24 @@ td input, td select, td textarea { min-width: 100px; }
 .import-table table { min-width: 1750px; }
 .import-table th { position: sticky; top: 0; z-index: 2; }
 .import-table td input + input { margin-top: .35rem; }
+.review-toolbar { position: sticky; top: .5rem; z-index: 8; padding: .75rem 1rem; display: flex; align-items: center; gap: 1rem; }
+.review-toolbar .muted { margin-left: auto; }
+.review-table { max-height: none; }
+.review-table table { min-width: 2140px; font-size: .75rem; }
+.review-table th, .review-table td { padding: .4rem .45rem; }
+.review-table td { vertical-align: top; }
+.review-table input, .review-table select, .review-table textarea { width: 82px; min-width: 0; padding: .34rem .38rem; border-radius: 6px; font-size: .75rem; }
+.review-table .review-datetime { width: 148px; }
+.review-table input[type="checkbox"] { width: 17px; height: 17px; padding: 0; accent-color: var(--primary); }
+.review-select-col { width: 34px; text-align: center; }
+.review-message { min-width: 150px; max-width: 220px; }
+.review-message small { margin: 0; }
+.review-actions { min-width: 92px; }
+.review-actions form { margin-bottom: .3rem; }
+.review-actions .btn { width: 100%; }
+.review-more { position: relative; color: var(--primary); font-weight: 700; cursor: pointer; }
+.review-more > div { position: absolute; right: 0; z-index: 12; width: 310px; padding: .7rem; display: grid; grid-template-columns: 1fr 1fr; gap: .55rem; border: 1px solid var(--line); border-radius: 9px; background: #fff; box-shadow: var(--shadow); }
+.review-more .full { grid-column: 1 / -1; }
 .row-invalid { background: #fff5f4; }
 .row-duplicate { background: #fff9eb; }
 
@@ -130,9 +148,6 @@ td input, td select, td textarea { min-width: 100px; }
 .tabs { margin-top: 1rem; display: flex; gap: .3rem; overflow-x: auto; }
 .tabs a { padding: .5rem .72rem; border-radius: 8px; color: var(--muted); white-space: nowrap; }
 .tabs a.active { color: var(--primary); background: #eaf0ff; font-weight: 800; }
-.pagination { margin: 1rem 0; display: flex; flex-wrap: wrap; gap: .35rem; }
-.pagination a { min-width: 34px; padding: .42rem .55rem; text-align: center; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
-.pagination a.active { color: #fff; border-color: var(--primary); background: var(--primary); }
 .notice { color: #36435a; background: #f3f6fc; border-color: #d8e1f1; }
 .danger-zone { border-color: #f2c7c3; }
 .danger-zone h2, .text-danger, .error-text { color: var(--danger); }
@@ -172,4 +187,23 @@ td input, td select, td textarea { min-width: 100px; }
     .form-grid > .full, .form-grid > fieldset.full { grid-column: auto; }
     .section-heading, .welcome-card, .commit-bar { align-items: stretch; flex-direction: column; }
     .permission-table > div { grid-template-columns: minmax(0, 1fr) 55px 55px; }
+    .review-toolbar { position: static; align-items: stretch; flex-direction: column; }
+    .review-toolbar .muted { margin-left: 0; }
+    .review-table { overflow: visible; background: transparent; border: 0; box-shadow: none; }
+    .review-table table { min-width: 0; }
+    .review-table thead { display: none; }
+    .review-table tbody { padding: 0; display: grid; gap: .7rem; }
+    .review-table tr { padding: .65rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; border: 1px solid var(--line); border-radius: 11px; background: #fff; box-shadow: var(--shadow); }
+    .review-table tr.row-invalid { background: #fff5f4; }
+    .review-table tr.row-duplicate { background: #fff9eb; }
+    .review-table td { padding: 0; display: grid; align-content: start; gap: .25rem; border: 0; }
+    .review-table td::before { content: attr(data-label); color: var(--muted); font-size: .62rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+    .review-table .review-select-col, .review-table .review-message, .review-table .review-actions { grid-column: 1 / -1; }
+    .review-table .review-select-col { display: flex; justify-content: flex-end; }
+    .review-table .review-select-col::before { margin-right: auto; }
+    .review-table input, .review-table select, .review-table textarea, .review-table .review-datetime { width: 100%; }
+    .review-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+    .review-actions form { margin: 0; }
+    .review-more { grid-column: 1 / -1; }
+    .review-more > div { position: static; width: 100%; margin-top: .45rem; }
 }

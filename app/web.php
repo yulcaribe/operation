@@ -56,7 +56,7 @@ function handle_action(array $user, string $path): never
             '/flights/assign' => ['assign_flight'],
             '/flight' => ['save_process', 'complete_flight'],
             '/imports' => ['stage_import'],
-            '/imports/review' => ['update_import_rows', 'commit_import'],
+            '/imports/review' => ['update_import_rows', 'delete_import_rows', 'commit_import'],
             '/profile' => ['change_password'],
         ];
         if (!in_array($action, $allowedActions[$path] ?? [], true)) throw new RuntimeException('İşlem bu sayfadan çalıştırılamaz.');
@@ -109,7 +109,12 @@ function handle_action(array $user, string $path): never
             case 'update_import_rows':
                 $batchId = (int)($_POST['batch_id'] ?? 0);
                 ImportService::updateRows($user, $batchId, (array)($_POST['rows'] ?? []));
-                $redirect = '/imports/review?id=' . $batchId . '&page=' . max(1, (int)($_POST['page'] ?? 1));
+                $redirect = '/imports/review?id=' . $batchId;
+                break;
+            case 'delete_import_rows':
+                $batchId = (int)($_POST['batch_id'] ?? 0);
+                ImportService::deleteRows($user, $batchId, (array)($_POST['row_ids'] ?? []));
+                $redirect = '/imports/review?id=' . $batchId;
                 break;
             case 'commit_import':
                 $batchId = (int)($_POST['batch_id'] ?? 0);
@@ -320,7 +325,7 @@ function render_flight_assign(array $actor): void
 function render_imports(array $actor): void
 {
     $batches=ImportService::batches();
-    if(can($actor,'imports.stage')):?><section class="panel"><div class="section-heading"><div><p class="eyebrow">1. adım</p><h2>Excel yükle</h2><p class="muted">Yalnızca ilk sayfadaki A:D kolonları okunur: A/C, GELİŞ, GİDİŞ ve PP. Dosya doğrudan uçuşlara aktarılmaz; düzenlenebilir önizleme oluşturulur.</p></div></div><form method="post" enctype="multipart/form-data" class="form-grid"><input type="hidden" name="action" value="stage_import"><?= csrf_field() ?><label>XLSX veya CSV<input type="file" name="excel_file" accept=".xlsx,.csv" required></label><button class="btn btn-primary">Önizleme Oluştur</button></form></section><?php endif;?>
+    if(can($actor,'imports.stage')):?><section class="panel"><div class="section-heading"><div><p class="eyebrow">1. adım</p><h2>Excel yükle</h2><p class="muted">İlk sayfanın A:Q kolonları okunur. Dosya doğrudan uçuşlara aktarılmaz; Excel sırasını koruyan düzenlenebilir önizleme oluşturulur.</p></div></div><form method="post" enctype="multipart/form-data" class="form-grid"><input type="hidden" name="action" value="stage_import"><?= csrf_field() ?><label>XLSX veya CSV<input type="file" name="excel_file" accept=".xlsx,.csv" required></label><button class="btn btn-primary">Önizleme Oluştur</button></form></section><?php endif;?>
     <section class="panel table-wrap"><table><thead><tr><th>Dosya</th><th>Yükleyen</th><th>Satır</th><th>Geçerli/Aktarılan</th><th>Hatalı/Atlanan</th><th>Durum</th><th></th></tr></thead><tbody><?php foreach($batches as $batch):?><tr><td><?= e($batch['file_name']) ?><small><?= e(date('d.m.Y H:i',strtotime($batch['created_at']))) ?></small></td><td><?= e($batch['imported_by_name']?:'-') ?></td><td><?= (int)$batch['total_rows'] ?></td><td><?= (int)$batch['success_rows'] ?></td><td><?= (int)$batch['failed_rows'] ?></td><td><span class="badge <?= e($batch['status']) ?>"><?= e($batch['status']) ?></span></td><td><a class="btn btn-small" href="<?= e(url_for('/imports/review').'?id='.(int)$batch['id']) ?>">Aç</a></td></tr><?php endforeach;?></tbody></table></section><?php
 }
 
@@ -329,44 +334,74 @@ function render_import_review(array $actor): void
     $id = (int)($_GET['id'] ?? 0);
     $batch = ImportService::batch($id);
     if (!$batch) throw new RuntimeException('Import bulunamadı.');
-    $perPage = 40;
-    $totalRows = (int)$batch['total_rows'];
-    $totalPages = max(1, (int)ceil($totalRows / $perPage));
-    $page = max(1, min($totalPages, (int)($_GET['page'] ?? 1)));
-    $rows = ImportService::rowsPage($id, $perPage, ($page - 1) * $perPage);
+    $rows = ImportService::rows($id);
+    $totalRows = count($rows);
     $invalid = ImportService::invalidCount($id);
+    $canEdit = $batch['status'] === 'preview' && can($actor, 'imports.stage');
     ?>
     <section class="panel">
-        <div class="section-heading"><div><p class="eyebrow">2. adım · <?= e($batch['file_name']) ?></p><h2>Önizleme ve düzeltme</h2><p class="muted">Hatalı hücreleri düzeltip kaydedin. Gerçek uçuş tablosuna yalnızca “SQL'e Aktar” onayından sonra yazılır.</p></div><a class="btn btn-ghost" href="<?= e(url_for('/imports')) ?>">Importlara dön</a></div>
-        <div class="summary-row"><span><?= $totalRows ?> satır</span><span class="text-danger"><?= $invalid ?> hatalı</span><span>Sayfa <?= $page ?>/<?= $totalPages ?></span><span>Durum: <?= e($batch['status']) ?></span></div>
+        <div class="section-heading"><div><p class="eyebrow">2. adım · <?= e($batch['file_name']) ?></p><h2>Tüm uçuşlar · önizleme ve düzeltme</h2><p class="muted">Exceldeki bütün uçuşlar tek ekrandadır. Her satırı ayrı kaydedebilir, istemediklerinizi tekli veya toplu silebilirsiniz.</p></div><a class="btn btn-ghost" href="<?= e(url_for('/imports')) ?>">Importlara dön</a></div>
+        <div class="summary-row"><span><?= $totalRows ?> uçuş</span><span class="text-danger"><?= $invalid ?> hatalı</span><span>Tek ekran</span><span>Durum: <?= e($batch['status']) ?></span></div>
     </section>
-    <?php if ($batch['status'] === 'preview' && can($actor, 'imports.stage')): ?>
-        <form method="post"><input type="hidden" name="action" value="update_import_rows"><input type="hidden" name="batch_id" value="<?= $id ?>"><input type="hidden" name="page" value="<?= $page ?>"><?= csrf_field() ?>
-            <section class="panel table-wrap import-table"><table><thead><tr><th># / Durum</th><th>ICAO</th><th>Tip</th><th>ARR no</th><th>DEP no</th><th>STA / ETA</th><th>STD / ETD</th><th>ARR rota</th><th>DEP rota</th><th>Kuyruk</th><th>Uçak</th><th>Park</th><th>Not/Hata</th></tr></thead><tbody>
-            <?php foreach ($rows as $row): $data = $row['data']; $errors = json_decode((string)$row['errors'], true) ?: []; $prefix = 'rows[' . (int)$row['id'] . ']'; ?>
-                <tr class="row-<?= e($row['status']) ?>">
-                    <td><strong><?= (int)$row['source_row_number'] ?></strong><small><?= e($row['status']) ?></small></td>
-                    <td><input name="<?= e($prefix) ?>[airline_icao]" value="<?= e($data['airline_icao'] ?? '') ?>"></td>
-                    <td><select name="<?= e($prefix) ?>[flight_type]"><?php foreach (['arrival', 'departure', 'turnaround'] as $type): ?><option value="<?= e($type) ?>" <?= selected($data['flight_type'] ?? '', $type) ?>><?= e($type) ?></option><?php endforeach; ?></select></td>
-                    <td><input name="<?= e($prefix) ?>[arrival_flight_number]" value="<?= e($data['arrival_flight_number'] ?? '') ?>"></td>
-                    <td><input name="<?= e($prefix) ?>[departure_flight_number]" value="<?= e($data['departure_flight_number'] ?? '') ?>"></td>
-                    <td><input type="datetime-local" name="<?= e($prefix) ?>[scheduled_arrival_at]" value="<?= e(datetime_local($data['scheduled_arrival_at'] ?? null)) ?>" title="STA"><input type="datetime-local" name="<?= e($prefix) ?>[estimated_arrival_at]" value="<?= e(datetime_local($data['estimated_arrival_at'] ?? null)) ?>" title="ETA"></td>
-                    <td><input type="datetime-local" name="<?= e($prefix) ?>[scheduled_departure_at]" value="<?= e(datetime_local($data['scheduled_departure_at'] ?? null)) ?>" title="STD"><input type="datetime-local" name="<?= e($prefix) ?>[estimated_departure_at]" value="<?= e(datetime_local($data['estimated_departure_at'] ?? null)) ?>" title="ETD"></td>
-                    <td><input name="<?= e($prefix) ?>[arrival_origin]" value="<?= e($data['arrival_origin'] ?? '') ?>" placeholder="ORG"><input name="<?= e($prefix) ?>[arrival_destination]" value="<?= e($data['arrival_destination'] ?? '') ?>" placeholder="DST"></td>
-                    <td><input name="<?= e($prefix) ?>[departure_origin]" value="<?= e($data['departure_origin'] ?? '') ?>" placeholder="ORG"><input name="<?= e($prefix) ?>[departure_destination]" value="<?= e($data['departure_destination'] ?? '') ?>" placeholder="DST"></td>
-                    <td><input name="<?= e($prefix) ?>[tail_number]" value="<?= e($data['tail_number'] ?? '') ?>"></td>
-                    <td><input name="<?= e($prefix) ?>[aircraft_type]" value="<?= e($data['aircraft_type'] ?? '') ?>"></td>
-                    <td><input name="<?= e($prefix) ?>[stand]" value="<?= e($data['stand'] ?? '') ?>"></td>
-                    <td><textarea name="<?= e($prefix) ?>[note]" rows="2"><?= e($data['note'] ?? '') ?></textarea><?php if ($errors): ?><small class="error-text"><?= e(implode(' ', $errors)) ?></small><?php endif; ?></td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody></table></section><?php render_pagination('/imports/review', ['id' => $id], $page, $totalPages); ?><button class="btn btn-primary">Bu Sayfadaki Düzeltmeleri Kaydet ve Tüm Dosyayı Kontrol Et</button>
+    <?php if ($canEdit): ?>
+        <form method="post" id="bulk-delete-import-rows" class="panel review-toolbar" data-confirm="Seçili uçuşlar bu önizlemeden silinecek. Devam edilsin mi?">
+            <input type="hidden" name="action" value="delete_import_rows"><input type="hidden" name="batch_id" value="<?= $id ?>"><?= csrf_field() ?>
+            <label class="check-label"><input type="checkbox" data-review-select-all><span>Tüm uçuşları seç</span></label>
+            <span class="muted" data-review-selection-count>0 uçuş seçili</span>
+            <button class="btn btn-danger btn-small" data-review-bulk-delete disabled>Seçilenleri Sil</button>
         </form>
     <?php elseif ($batch['status'] === 'preview'): ?>
-        <section class="panel notice">Önizleme salt okunur; düzeltme yetkiniz yok.</section>
+        <section class="panel notice">Önizleme salt okunur; düzeltme ve silme yetkiniz yok.</section>
     <?php endif; ?>
+
+    <section class="panel table-wrap import-table review-table"><table><thead><tr><th class="review-select-col"></th><th># / Durum</th><th>A/C</th><th>GELİŞ</th><th>GİDİŞ</th><th>PP</th><th>EA</th><th>EAF</th><th>G2</th><th>G1</th><th>STA</th><th>STD</th><th>G1</th><th>G2</th><th>EDF</th><th>TIP</th><th>REG-A</th><th>REG</th><th>REG-D</th><th>Kontrol</th><th>İşlem</th></tr></thead><tbody>
+    <?php foreach ($rows as $row):
+        $rowId = (int)$row['id'];
+        $data = $row['data'];
+        $errors = json_decode((string)$row['errors'], true) ?: [];
+        $prefix = 'rows[' . $rowId . ']';
+        $formId = 'review-row-' . $rowId;
+        $deleteFormId = 'delete-review-row-' . $rowId;
+        $formAttribute = $canEdit ? ' form="' . e($formId) . '"' : ' disabled';
+        ?>
+        <tr class="row-<?= e($row['status']) ?>" data-review-row>
+            <td class="review-select-col" data-label="Seç"><?php if ($canEdit): ?><input type="checkbox" form="bulk-delete-import-rows" name="row_ids[]" value="<?= $rowId ?>" data-review-select><?php endif; ?></td>
+            <td data-label="Satır"><strong>#<?= (int)$row['source_row_number'] ?></strong><span class="badge <?= e($row['status']) ?>"><?= e($row['status']) ?></span><small><?= e($data['flight_type'] ?? '-') ?></small></td>
+            <td data-label="A/C"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[airline_icao]" value="<?= e($data['airline_icao'] ?? '') ?>" maxlength="3"></td>
+            <td data-label="Geliş"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[arrival_flight_number]" value="<?= e($data['arrival_flight_number'] ?? '') ?>"></td>
+            <td data-label="Gidiş"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[departure_flight_number]" value="<?= e($data['departure_flight_number'] ?? '') ?>"></td>
+            <td data-label="PP"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[stand]" value="<?= e($data['stand'] ?? '') ?>"></td>
+            <td data-label="EA"><input<?= $formAttribute ?> class="review-datetime" type="datetime-local" name="<?= e($prefix) ?>[estimated_arrival_at]" value="<?= e(datetime_local($data['estimated_arrival_at'] ?? null)) ?>"></td>
+            <td data-label="EAF"><input<?= $formAttribute ?> class="review-datetime" type="datetime-local" name="<?= e($prefix) ?>[excel_eaf_at]" value="<?= e(datetime_local($data['excel_eaf_at'] ?? null)) ?>"></td>
+            <td data-label="G2 Arrival"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[arrival_g2]" value="<?= e($data['arrival_g2'] ?? '') ?>"></td>
+            <td data-label="G1 Arrival"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[arrival_origin]" value="<?= e($data['arrival_origin'] ?? '') ?>"></td>
+            <td data-label="STA"><input<?= $formAttribute ?> class="review-datetime" type="datetime-local" name="<?= e($prefix) ?>[scheduled_arrival_at]" value="<?= e(datetime_local($data['scheduled_arrival_at'] ?? null)) ?>"></td>
+            <td data-label="STD"><input<?= $formAttribute ?> class="review-datetime" type="datetime-local" name="<?= e($prefix) ?>[scheduled_departure_at]" value="<?= e(datetime_local($data['scheduled_departure_at'] ?? null)) ?>"></td>
+            <td data-label="G1 Departure"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[departure_destination]" value="<?= e($data['departure_destination'] ?? '') ?>"></td>
+            <td data-label="G2 Departure"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[departure_g2]" value="<?= e($data['departure_g2'] ?? '') ?>"></td>
+            <td data-label="EDF"><input<?= $formAttribute ?> class="review-datetime" type="datetime-local" name="<?= e($prefix) ?>[estimated_departure_at]" value="<?= e(datetime_local($data['estimated_departure_at'] ?? null)) ?>"></td>
+            <td data-label="TIP"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[aircraft_type]" value="<?= e($data['aircraft_type'] ?? '') ?>"></td>
+            <td data-label="REG-A"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[registration_arrival]" value="<?= e($data['registration_arrival'] ?? '') ?>"></td>
+            <td data-label="REG"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[registration]" value="<?= e($data['registration'] ?? '') ?>"></td>
+            <td data-label="REG-D"><input<?= $formAttribute ?> name="<?= e($prefix) ?>[registration_departure]" value="<?= e($data['registration_departure'] ?? '') ?>"></td>
+            <td class="review-message" data-label="Kontrol"><?php if ($errors): ?><small class="error-text"><?= e(implode(' ', $errors)) ?></small><?php else: ?><small>Aktarıma hazır</small><?php endif; ?></td>
+            <td class="review-actions" data-label="İşlem">
+                <?php if ($canEdit): ?>
+                    <form method="post" id="<?= e($formId) ?>"><input type="hidden" name="action" value="update_import_rows"><input type="hidden" name="batch_id" value="<?= $id ?>"><?= csrf_field() ?><button class="btn btn-primary btn-small">Kaydet</button></form>
+                    <form method="post" id="<?= e($deleteFormId) ?>" data-confirm="Bu uçuş önizlemeden silinecek. Devam edilsin mi?"><input type="hidden" name="action" value="delete_import_rows"><input type="hidden" name="batch_id" value="<?= $id ?>"><input type="hidden" name="row_ids[]" value="<?= $rowId ?>"><?= csrf_field() ?><button class="btn btn-danger btn-small">Sil</button></form>
+                    <details class="review-more"><summary>Diğer</summary><div>
+                        <label>Arrival destination<input form="<?= e($formId) ?>" name="<?= e($prefix) ?>[arrival_destination]" value="<?= e($data['arrival_destination'] ?? '') ?>"></label>
+                        <label>Departure origin<input form="<?= e($formId) ?>" name="<?= e($prefix) ?>[departure_origin]" value="<?= e($data['departure_origin'] ?? '') ?>"></label>
+                        <label class="full">Not<textarea form="<?= e($formId) ?>" name="<?= e($prefix) ?>[note]" rows="2"><?= e($data['note'] ?? '') ?></textarea></label>
+                    </div></details>
+                <?php endif; ?>
+            </td>
+        </tr>
+    <?php endforeach; ?>
+    <?php if (!$rows): ?><tr><td colspan="21" class="empty">Önizlemede uçuş kalmadı.</td></tr><?php endif; ?>
+    </tbody></table></section>
     <?php if ($batch['status'] === 'preview' && can($actor, 'imports.commit')): ?>
-        <form method="post" class="commit-bar" data-confirm="Düzeltilmiş satırlar uçuş tablosuna aktarılacak. Devam edilsin mi?"><input type="hidden" name="action" value="commit_import"><input type="hidden" name="batch_id" value="<?= $id ?>"><?= csrf_field() ?><div><strong>3. adım</strong><p>Hata kalmadığında düzeltilmiş satırları uçuş tablosuna aktar.</p></div><button class="btn btn-success" <?= $invalid ? 'disabled' : '' ?>>SQL'e Aktar</button></form>
+        <form method="post" class="commit-bar" data-confirm="Önizlemede kalan uçuşlar SQL uçuş tablosuna aktarılacak. Devam edilsin mi?"><input type="hidden" name="action" value="commit_import"><input type="hidden" name="batch_id" value="<?= $id ?>"><?= csrf_field() ?><div><strong>3. adım</strong><p>Hata kalmadığında yalnızca önizlemede bıraktığınız uçuşları aktarın.</p></div><button class="btn btn-success" <?= $invalid || !$totalRows ? 'disabled' : '' ?>>SQL'e Aktar</button></form>
     <?php elseif ($batch['status'] !== 'preview'): ?>
         <section class="panel notice">Bu import tamamlandı; satırlar artık salt okunur.</section>
     <?php endif;
@@ -465,18 +500,6 @@ function render_profile(array $user): void
 
 function render_flash(?array $flash): void { if($flash):?><div class="flash <?= e($flash['type']) ?>"><?= e($flash['message']) ?></div><?php endif; }
 function render_error(Throwable $error): void { render_auth_start('Hata');?><main class="auth-card"><h1>İşlem tamamlanamadı</h1><p><?= e(friendly_error($error)) ?></p><a class="btn btn-primary" href="<?= e(url_for('/')) ?>">Ana sayfaya dön</a></main></body></html><?php }
-function render_pagination(string $path, array $query, int $current, int $total): void
-{
-    if ($total <= 1) return;
-    $pages = array_unique(array_merge([1], range(max(1, $current - 3), min($total, $current + 3)), [$total]));
-    sort($pages);
-    echo '<nav class="pagination" aria-label="Sayfalar">';
-    foreach ($pages as $page) {
-        $href = url_for($path) . '?' . http_build_query(array_merge($query, ['page' => $page]));
-        echo '<a class="' . ($page === $current ? 'active' : '') . '" href="' . e($href) . '">' . $page . '</a>';
-    }
-    echo '</nav>';
-}
 function selected(mixed $value,mixed $expected):string{return (string)$value===(string)$expected?'selected':'';}
 function checked(bool $value):string{return $value?'checked':'';}
 function options_rows(array $rows,int $selectedId,string $labelKey,string $secondKey=''):void{echo '<option value="">Seçin</option>';foreach($rows as $row){$label=(string)$row[$labelKey].($secondKey!==''?' · '.(string)$row[$secondKey]:'');echo '<option value="'.(int)$row['id'].'" '.selected($selectedId,$row['id']).'>'.e($label).'</option>';}}
