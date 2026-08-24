@@ -500,11 +500,29 @@ final class ImportService
         $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
         if (!in_array($extension, ['xlsx', 'csv'], true)) throw new RuntimeException('Yalnızca XLSX veya CSV dosyası yükleyin.');
         $rawRows = $extension === 'xlsx' ? self::readXlsx((string)$file['tmp_name']) : self::readCsv((string)$file['tmp_name']);
-        if (count($rawRows) < 2) throw new RuntimeException('Dosyada başlık ve en az bir veri satırı olmalıdır.');
-        if (count($rawRows) - 1 > self::MAX_ROWS) throw new RuntimeException('Tek dosyada en fazla ' . self::MAX_ROWS . ' uçuş işlenebilir.');
-
-        $headers = array_map([self::class, 'canonicalHeader'], array_shift($rawRows));
-        if (!array_filter($headers)) throw new RuntimeException('Excel başlıkları tanınamadı.');
+        $headerIndex = self::findFlightHeaderRow($rawRows);
+        if ($headerIndex < 0) throw new RuntimeException('İlk sayfada A/C, GELİŞ, GİDİŞ ve PP başlıkları bulunamadı.');
+        $flightDate = self::flightDateFromMatrix($rawRows, $name);
+        $importRows = [];
+        for ($rowIndex = $headerIndex + 1, $rowCount = count($rawRows); $rowIndex < $rowCount; $rowIndex++) {
+            $rawRow = $rawRows[$rowIndex] ?? [];
+            $arrivalNo = self::normalizeFlightNumber($rawRow[1] ?? '');
+            $departureNo = self::normalizeFlightNumber($rawRow[2] ?? '');
+            if ($arrivalNo === null && $departureNo === null) continue;
+            $importRows[] = [
+                'source_row_number' => $rowIndex + 1,
+                'source' => [
+                    'airline_icao' => self::normalizeAirlineCode($rawRow[0] ?? ''),
+                    'arrival_flight_number' => $arrivalNo,
+                    'departure_flight_number' => $departureNo,
+                    'scheduled_arrival_at' => $arrivalNo !== null ? $flightDate : null,
+                    'scheduled_departure_at' => $departureNo !== null ? $flightDate : null,
+                    'stand' => trim((string)($rawRow[3] ?? '')),
+                ],
+            ];
+        }
+        if (!$importRows) throw new RuntimeException('İlk sayfanın A:D kolonlarında kullanılabilir geliş veya gidiş uçuşu bulunamadı.');
+        if (count($importRows) > self::MAX_ROWS) throw new RuntimeException('Tek dosyada en fazla ' . self::MAX_ROWS . ' uçuş işlenebilir.');
         $hash = hash_file('sha256', (string)$file['tmp_name']);
         if (!is_string($hash)) throw new RuntimeException('Yüklenen dosyanın özeti hesaplanamadı.');
 
@@ -512,21 +530,18 @@ final class ImportService
         try {
             $batchId = DB::insert(
                 'INSERT INTO flight_import_batches (file_name, file_hash, status, total_rows, success_rows, imported_by) VALUES (?, ?, "preview", ?, ?, ?)',
-                [$name, $hash, count($rawRows), 0, (int)$actor['id']]
+                [$name, $hash, count($importRows), 0, (int)$actor['id']]
             );
-            foreach ($rawRows as $index => $rawRow) {
-                $source = [];
-                foreach ($headers as $column => $key) {
-                    if ($key !== null) $source[$key] = $rawRow[$column] ?? '';
-                }
+            foreach ($importRows as $importRow) {
+                $source = $importRow['source'];
                 [$payload, $status, $errors, $sourceKey] = self::prepareRow($source);
                 DB::insert(
                     'INSERT INTO flight_import_rows (batch_id, source_row_number, status, source_key, payload, errors) VALUES (?, ?, ?, ?, ?, ?)',
-                    [$batchId, $index + 2, $status, $sourceKey, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $errors ? json_encode($errors, JSON_UNESCAPED_UNICODE) : null]
+                    [$batchId, (int)$importRow['source_row_number'], $status, $sourceKey, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $errors ? json_encode($errors, JSON_UNESCAPED_UNICODE) : null]
                 );
             }
             self::revalidateDuplicateStatuses($batchId);
-            Audit::record((int)$actor['id'], 'import.staged', 'flight_import_batch', $batchId, ['file_name' => $name, 'rows' => count($rawRows)]);
+            Audit::record((int)$actor['id'], 'import.staged', 'flight_import_batch', $batchId, ['file_name' => $name, 'rows' => count($importRows)]);
             DB::commit();
             return $batchId;
         } catch (Throwable $error) { DB::rollback(); throw $error; }
@@ -598,11 +613,11 @@ final class ImportService
 
     private static function prepareRow(array $source): array
     {
-        $icao = strtoupper(trim((string)($source['airline_icao'] ?? '')));
+        $icao = self::normalizeAirlineCode($source['airline_icao'] ?? '');
         $airlineId = (int)(self::airlineMap()[$icao] ?? 0);
         $typeCode = strtolower(trim((string)($source['flight_type'] ?? '')));
-        $arrivalNo = nullable_string($source['arrival_flight_number'] ?? null);
-        $departureNo = nullable_string($source['departure_flight_number'] ?? null);
+        $arrivalNo = self::normalizeFlightNumber($source['arrival_flight_number'] ?? null);
+        $departureNo = self::normalizeFlightNumber($source['departure_flight_number'] ?? null);
         if (!in_array($typeCode, ['arrival', 'departure', 'turnaround'], true)) $typeCode = $arrivalNo && $departureNo ? 'turnaround' : ($departureNo ? 'departure' : 'arrival');
         $flightTypeId = (int)(self::flightTypeMap()[$typeCode] ?? 0);
         $payload = FlightService::normalize([
@@ -668,32 +683,53 @@ final class ImportService
         return self::$flightTypesByCode;
     }
 
-    private static function canonicalHeader(mixed $header): ?string
+    private static function findFlightHeaderRow(array $matrix): int
     {
-        $text = trim((string)$header);
-        $text = strtr($text, ['İ'=>'I','I'=>'I','ı'=>'i','Ş'=>'S','ş'=>'s','Ğ'=>'G','ğ'=>'g','Ü'=>'U','ü'=>'u','Ö'=>'O','ö'=>'o','Ç'=>'C','ç'=>'c']);
-        $text = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '_', $text) ?? '');
-        $text = trim($text, '_');
-        $aliases = [
-            'airline_icao'=>['airline_icao','icao','icao_code','havayolu_icao','carrier_icao','operator_icao','airline'],
-            'flight_type'=>['flight_type','type','ucus_tipi','operation_type'],
-            'arrival_flight_number'=>['arrival_flight_number','arrival_flight_no','arr_flight_no','gelis_ucus_no','arr_flt'],
-            'departure_flight_number'=>['departure_flight_number','departure_flight_no','dep_flight_no','gidis_ucus_no','dep_flt'],
-            'arrival_origin'=>['arrival_origin','arr_origin','gelis_kalkis','origin'],
-            'arrival_destination'=>['arrival_destination','arr_destination','gelis_varis'],
-            'departure_origin'=>['departure_origin','dep_origin','gidis_kalkis'],
-            'departure_destination'=>['departure_destination','dep_destination','gidis_varis','destination'],
-            'scheduled_arrival_at'=>['scheduled_arrival_at','scheduled_arrival','sta','planlanan_gelis'],
-            'estimated_arrival_at'=>['estimated_arrival_at','estimated_arrival','eta','tahmini_gelis'],
-            'scheduled_departure_at'=>['scheduled_departure_at','scheduled_departure','std','planlanan_kalkis'],
-            'estimated_departure_at'=>['estimated_departure_at','estimated_departure','etd','tahmini_kalkis'],
-            'tail_number'=>['tail_number','registration','reg','kuyruk_no'],
-            'aircraft_type'=>['aircraft_type','ac_type','aircraft','ucak_tipi'],
-            'stand'=>['stand','park','park_position','parking_position'],
-            'note'=>['note','notes','not','aciklama'],
-        ];
-        foreach ($aliases as $canonical => $values) if (in_array($text, $values, true)) return $canonical;
-        return null;
+        foreach ($matrix as $index => $row) {
+            if (
+                self::normalizeFlightHeader($row[0] ?? '') === 'AC'
+                && self::normalizeFlightHeader($row[1] ?? '') === 'GELIS'
+                && self::normalizeFlightHeader($row[2] ?? '') === 'GIDIS'
+                && self::normalizeFlightHeader($row[3] ?? '') === 'PP'
+            ) return (int)$index;
+        }
+        return -1;
+    }
+
+    private static function normalizeFlightHeader(mixed $value): string
+    {
+        $text = strtr(trim((string)$value), [
+            'Ç'=>'C', 'ç'=>'C', 'Ğ'=>'G', 'ğ'=>'G', 'İ'=>'I', 'I'=>'I', 'ı'=>'I',
+            'Ö'=>'O', 'ö'=>'O', 'Ş'=>'S', 'ş'=>'S', 'Ü'=>'U', 'ü'=>'U',
+        ]);
+        $text = strtoupper($text);
+        return preg_replace('/[^A-Z0-9]/', '', $text) ?? '';
+    }
+
+    private static function normalizeFlightNumber(mixed $value): ?string
+    {
+        $value = strtoupper(preg_replace('/\s+/', '', trim((string)$value)) ?? '');
+        return $value === '' ? null : $value;
+    }
+
+    private static function normalizeAirlineCode(mixed $value): string
+    {
+        return strtoupper(preg_replace('/\s+/', '', trim((string)$value)) ?? '');
+    }
+
+    private static function flightDateFromMatrix(array $matrix, string $fileName): string
+    {
+        for ($index = 0, $limit = min(5, count($matrix)); $index < $limit; $index++) {
+            $date = self::spreadsheetDate($matrix[$index][0] ?? '');
+            if ($date !== null) return date('Y-m-d 00:00:00', strtotime($date));
+        }
+        if (preg_match('/(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})/', $fileName, $match)) {
+            return sprintf('%04d-%02d-%02d 00:00:00', (int)$match[3], (int)$match[2], (int)$match[1]);
+        }
+        if (preg_match('/(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})/', $fileName, $match)) {
+            return sprintf('%04d-%02d-%02d 00:00:00', (int)$match[1], (int)$match[2], (int)$match[3]);
+        }
+        return date('Y-m-d 00:00:00');
     }
 
     private static function spreadsheetDate(mixed $value): ?string
@@ -714,6 +750,7 @@ final class ImportService
         $delimiter = substr_count($first, ';') > substr_count($first, ',') ? ';' : ',';
         $rows = [];
         while (($row = fgetcsv($handle, 0, $delimiter)) !== false) {
+            $row = array_slice($row, 0, 4);
             if (array_filter($row, static fn($value): bool => trim((string)$value) !== '')) $rows[] = $row;
             if (count($rows) > self::MAX_ROWS + 1) break;
         }
@@ -743,6 +780,8 @@ final class ImportService
         if (!$sheet) throw new RuntimeException('XLSX içeriği okunamadı.');
         $rows = [];
         foreach ($sheet->sheetData->row as $rowNode) {
+            $sourceRowNumber = max(1, (int)$rowNode['r']);
+            while (count($rows) < $sourceRowNumber - 1) $rows[] = [];
             $row = [];
             foreach ($rowNode->c as $cell) {
                 $reference = (string)$cell['r'];
@@ -751,6 +790,7 @@ final class ImportService
                 $index = 0;
                 foreach (str_split($letters) as $letter) $index = $index * 26 + (ord($letter) - 64);
                 $index--;
+                if ($index > 3) continue;
                 $type = (string)$cell['t'];
                 $value = $type === 'inlineStr' ? (string)$cell->is->t : (string)$cell->v;
                 if ($type === 's') $value = $shared[(int)$value] ?? '';
@@ -758,9 +798,11 @@ final class ImportService
             }
             if ($row) {
                 $max = max(array_keys($row));
-                $rows[] = array_replace(array_fill(0, $max + 1, ''), $row);
+                $rows[$sourceRowNumber - 1] = array_replace(array_fill(0, $max + 1, ''), $row);
+            } else {
+                $rows[$sourceRowNumber - 1] = [];
             }
-            if (count($rows) > self::MAX_ROWS + 1) break;
+            if (count($rows) > self::MAX_ROWS + 100) break;
         }
         return $rows;
     }

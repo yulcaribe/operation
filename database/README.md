@@ -14,6 +14,6 @@ Kurulum sırası:
 2. Sunucuda/yerelde `php scripts/create_admin.php` çalıştırarak ilk admini oluşturun.
 3. Admin hesabıyla giriş yapıp diğer ICAO kodlarını, kullanıcıları ve kapsamları arayüzden ekleyin.
 
-Excel/CSV akışı yükleme → SQL staging önizlemesi → sayfalı düzeltme ve yeniden doğrulama → yetkili son onay → `flights` tablosuna aktarım şeklindedir. Tanınan temel kolonlar `icao`, `flight_type`, `arrival_flight_number`, `departure_flight_number`, `sta`, `eta`, `std`, `etd`, rota, kuyruk, uçak tipi, park ve not alanlarıdır. gbeyan dosyasının gerçek başlıkları görüldüğünde alias listesi kesinleştirilebilir.
+Excel/CSV akışı yükleme → SQL staging önizlemesi → sayfalı düzeltme ve yeniden doğrulama → yetkili son onay → `flights` tablosuna aktarım şeklindedir. gbeyan ile aynı sabit yerleşim kullanılır: yalnızca ilk çalışma sayfasındaki `A:D` kolonları okunur ve başlık satırı `A/C`, `GELİŞ`, `GİDİŞ`, `PP` değerleriyle bulunur. A kolonu ICAO, B geliş uçuş numarası, C gidiş uçuş numarası, D park pozisyonudur; sonraki kolonlar yok sayılır. Uçuş tarihi önce üstteki ilk beş A hücresinden, bulunamazsa dosya adından alınır. Saat kolonu olmadığı için planlanan saat önizlemede `00:00` başlatılır ve SQL aktarımından önce düzeltilebilir.
 
 10 MB uygulama limitini kullanmak için PHP ayarlarında `upload_max_filesize` en az `10M`, `post_max_size` ise en az `11M` olmalıdır. Düzeltme ekranı shared-hosting `max_input_vars` sınırına takılmaması için 40 satır olarak sayfalanır.
