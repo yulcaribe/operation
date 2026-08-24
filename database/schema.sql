@@ -212,14 +212,14 @@ CREATE TABLE IF NOT EXISTS flight_import_batches (
 CREATE TABLE IF NOT EXISTS flight_import_rows (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     batch_id BIGINT UNSIGNED NOT NULL,
-    row_number INT UNSIGNED NOT NULL,
+    source_row_number INT UNSIGNED NOT NULL,
     status ENUM('valid', 'imported', 'duplicate', 'invalid') NOT NULL,
     source_key VARCHAR(190) NULL,
     payload LONGTEXT NULL,
     errors LONGTEXT NULL,
     flight_id BIGINT UNSIGNED NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_flight_import_rows_batch_row (batch_id, row_number),
+    UNIQUE KEY uq_flight_import_rows_batch_row (batch_id, source_row_number),
     CONSTRAINT fk_flight_import_rows_batch FOREIGN KEY (batch_id) REFERENCES flight_import_batches(id) ON DELETE CASCADE,
     CONSTRAINT fk_flight_import_rows_flight FOREIGN KEY (flight_id) REFERENCES flights(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

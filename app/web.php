@@ -345,7 +345,7 @@ function render_import_review(array $actor): void
             <section class="panel table-wrap import-table"><table><thead><tr><th># / Durum</th><th>ICAO</th><th>Tip</th><th>ARR no</th><th>DEP no</th><th>STA / ETA</th><th>STD / ETD</th><th>ARR rota</th><th>DEP rota</th><th>Kuyruk</th><th>Uçak</th><th>Park</th><th>Not/Hata</th></tr></thead><tbody>
             <?php foreach ($rows as $row): $data = $row['data']; $errors = json_decode((string)$row['errors'], true) ?: []; $prefix = 'rows[' . (int)$row['id'] . ']'; ?>
                 <tr class="row-<?= e($row['status']) ?>">
-                    <td><strong><?= (int)$row['row_number'] ?></strong><small><?= e($row['status']) ?></small></td>
+                    <td><strong><?= (int)$row['source_row_number'] ?></strong><small><?= e($row['status']) ?></small></td>
                     <td><input name="<?= e($prefix) ?>[airline_icao]" value="<?= e($data['airline_icao'] ?? '') ?>"></td>
                     <td><select name="<?= e($prefix) ?>[flight_type]"><?php foreach (['arrival', 'departure', 'turnaround'] as $type): ?><option value="<?= e($type) ?>" <?= selected($data['flight_type'] ?? '', $type) ?>><?= e($type) ?></option><?php endforeach; ?></select></td>
                     <td><input name="<?= e($prefix) ?>[arrival_flight_number]" value="<?= e($data['arrival_flight_number'] ?? '') ?>"></td>

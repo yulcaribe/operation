@@ -466,7 +466,7 @@ final class ImportService
 
     public static function rows(int $batchId): array
     {
-        $rows = DB::fetchAll('SELECT * FROM flight_import_rows WHERE batch_id = ? ORDER BY row_number', [$batchId]);
+        $rows = DB::fetchAll('SELECT * FROM flight_import_rows WHERE batch_id = ? ORDER BY source_row_number', [$batchId]);
         foreach ($rows as &$row) $row['data'] = json_decode((string)$row['payload'], true) ?: [];
         unset($row);
         return $rows;
@@ -477,7 +477,7 @@ final class ImportService
         $limit = max(1, min(100, $limit));
         $offset = max(0, $offset);
         $rows = DB::fetchAll(
-            'SELECT * FROM flight_import_rows WHERE batch_id = ? ORDER BY row_number LIMIT ' . $limit . ' OFFSET ' . $offset,
+            'SELECT * FROM flight_import_rows WHERE batch_id = ? ORDER BY source_row_number LIMIT ' . $limit . ' OFFSET ' . $offset,
             [$batchId]
         );
         foreach ($rows as &$row) $row['data'] = json_decode((string)$row['payload'], true) ?: [];
@@ -521,7 +521,7 @@ final class ImportService
                 }
                 [$payload, $status, $errors, $sourceKey] = self::prepareRow($source);
                 DB::insert(
-                    'INSERT INTO flight_import_rows (batch_id, row_number, status, source_key, payload, errors) VALUES (?, ?, ?, ?, ?, ?)',
+                    'INSERT INTO flight_import_rows (batch_id, source_row_number, status, source_key, payload, errors) VALUES (?, ?, ?, ?, ?, ?)',
                     [$batchId, $index + 2, $status, $sourceKey, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $errors ? json_encode($errors, JSON_UNESCAPED_UNICODE) : null]
                 );
             }
@@ -568,7 +568,7 @@ final class ImportService
             if ($row['status'] === 'duplicate') continue;
             $airlineId = (int)($row['data']['airline_id'] ?? 0);
             if (!can($actor, 'imports.commit', ['airline_id' => $airlineId])) {
-                throw new RuntimeException('Satır ' . $row['row_number'] . ' için ICAO import yetkiniz yok.');
+                throw new RuntimeException('Satır ' . $row['source_row_number'] . ' için ICAO import yetkiniz yok.');
             }
         }
 
@@ -582,7 +582,7 @@ final class ImportService
                 $payload['source'] = 'excel';
                 $payload['source_key'] = (string)$row['source_key'];
                 $errors = FlightService::validate($payload);
-                if ($errors) throw new RuntimeException('Satır ' . $row['row_number'] . ': ' . implode(' ', $errors));
+                if ($errors) throw new RuntimeException('Satır ' . $row['source_row_number'] . ': ' . implode(' ', $errors));
                 $flightId = FlightService::create($payload, (int)$actor['id']);
                 DB::execute('UPDATE flight_import_rows SET status = "imported", flight_id = ? WHERE id = ?', [$flightId, (int)$row['id']]);
                 $success++;
@@ -636,7 +636,7 @@ final class ImportService
             [$batchId]
         ), 'source_key'), true);
         $seenKeys = [];
-        foreach (DB::fetchAll('SELECT id, source_key, status FROM flight_import_rows WHERE batch_id = ? ORDER BY row_number', [$batchId]) as $row) {
+        foreach (DB::fetchAll('SELECT id, source_key, status FROM flight_import_rows WHERE batch_id = ? ORDER BY source_row_number', [$batchId]) as $row) {
             if ($row['status'] === 'invalid') continue;
             $sourceKey = (string)$row['source_key'];
             if (isset($existingKeys[$sourceKey]) || isset($seenKeys[$sourceKey])) {
