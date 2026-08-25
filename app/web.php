@@ -44,7 +44,9 @@ try {
         render_timeline_data($user);
         exit;
     }
-    if ($path === '/timeline/action') {
+    $isTimelineAction = $path === '/timeline/action'
+        || ($path === '/timeline' && is_post() && (string)($_POST['_timeline_ajax'] ?? '') === '1');
+    if ($isTimelineAction) {
         render_timeline_action($user);
         exit;
     }
@@ -56,6 +58,13 @@ try {
         http_response_code(500);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode(['error' => friendly_error($error)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    if ($path === '/timeline/action' || ($path === '/timeline' && is_post() && (string)($_POST['_timeline_ajax'] ?? '') === '1')) {
+        // Bazı shared-hosting katmanları 4xx/5xx PHP gövdelerini HTML hata sayfasıyla değiştiriyor.
+        http_response_code(200);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'error' => friendly_error($error)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
     }
     http_response_code(500);
@@ -245,7 +254,8 @@ function render_timeline_action(array $user): void
         }
         echo json_encode(['ok' => true, 'message' => 'İşlem başarıyla tamamlandı.'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     } catch (Throwable $error) {
-        http_response_code(422);
+        // Hata durumu JSON içindeki `ok` alanıyla taşınır; cPanel'in yanıtı HTML'e çevirmesi önlenir.
+        http_response_code(200);
         echo json_encode(['ok' => false, 'error' => friendly_error($error)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 }
@@ -458,8 +468,8 @@ function render_timeline(array $actor): void
             <header class="timeline-drawer-header"><div><p class="eyebrow">Canlı uçuş</p><h2 data-timeline-drawer-title>Uçuş detayı</h2><p class="muted" data-timeline-drawer-meta></p></div><button type="button" class="btn btn-small" data-timeline-drawer-close aria-label="Kapat">✕</button></header>
             <div class="timeline-drawer-feedback" data-timeline-drawer-feedback hidden></div>
             <section class="timeline-drawer-section"><h3>Operasyon süreçleri</h3><div class="timeline-drawer-processes" data-timeline-drawer-processes></div></section>
-            <form method="post" action="<?= e(url_for('/timeline/action')) ?>" class="timeline-drawer-form" data-timeline-flight-form>
-                <input type="hidden" name="action" value="save_timeline_flight"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><input type="hidden" name="airline_id"><input type="hidden" name="status"><?= csrf_field() ?>
+            <form method="post" action="<?= e(url_for('/timeline')) ?>" class="timeline-drawer-form" data-timeline-flight-form>
+                <input type="hidden" name="_timeline_ajax" value="1"><input type="hidden" name="action" value="save_timeline_flight"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><input type="hidden" name="airline_id"><input type="hidden" name="status"><?= csrf_field() ?>
                 <div class="timeline-drawer-grid">
                     <label>Uçuş tipi<select name="flight_type_id" required><?php options_rows($flightTypes, 0, 'name'); ?></select></label>
                     <label>Park<input name="stand"></label>
@@ -475,16 +485,16 @@ function render_timeline(array $actor): void
                 <button class="btn btn-primary" data-timeline-flight-save>Uçuş Bilgilerini Kaydet</button>
             </form>
             <?php if ($timelineUsers): ?>
-                <form method="post" action="<?= e(url_for('/timeline/action')) ?>" class="timeline-drawer-assign" data-timeline-assign-form>
-                    <input type="hidden" name="action" value="assign_timeline_flight"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><?= csrf_field() ?>
+                <form method="post" action="<?= e(url_for('/timeline')) ?>" class="timeline-drawer-assign" data-timeline-assign-form>
+                    <input type="hidden" name="_timeline_ajax" value="1"><input type="hidden" name="action" value="assign_timeline_flight"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><?= csrf_field() ?>
                     <label>Operasyon memuru<select name="user_id"><option value="0">Atanmamış</option><?php foreach ($timelineUsers as $timelineUser): ?><option value="<?= (int)$timelineUser['id'] ?>"><?= e(trim($timelineUser['first_name'] . ' ' . $timelineUser['last_name']) . ' · ' . $timelineUser['username']) ?></option><?php endforeach; ?></select></label>
                     <button class="btn btn-success">Atamayı Kaydet</button>
                     <small data-timeline-assign-note>Atama yalnızca planlanan uçuşlarda değiştirilebilir.</small>
                 </form>
             <?php endif; ?>
             <?php if ($canManage): ?>
-                <form method="post" action="<?= e(url_for('/timeline/action')) ?>" class="timeline-drawer-status" data-timeline-status-form data-confirm="Uçuş durumu değiştirilecek; süreç kayıtları korunacak. Devam edilsin mi?" hidden>
-                    <input type="hidden" name="action" value="change_timeline_flight_status"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><?= csrf_field() ?>
+                <form method="post" action="<?= e(url_for('/timeline')) ?>" class="timeline-drawer-status" data-timeline-status-form data-confirm="Uçuş durumu değiştirilecek; süreç kayıtları korunacak. Devam edilsin mi?" hidden>
+                    <input type="hidden" name="_timeline_ajax" value="1"><input type="hidden" name="action" value="change_timeline_flight_status"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><?= csrf_field() ?>
                     <label>Uçuş durumu<select name="target_status" required></select></label>
                     <button class="btn btn-warning">Durumu Değiştir</button>
                     <small>Süreç kayıtları korunur. Devam eden uçuş planlanana alınırsa mevcut atama kaldırılır.</small>

@@ -183,6 +183,7 @@
         let loading = false;
         let initialLoad = true;
         let resizeTimer = 0;
+        let renderedMinuteWidth = 0;
 
         const makeElement = (tag, className = '', text = '') => {
             const element = document.createElement(tag);
@@ -192,7 +193,18 @@
         };
         const labelWidth = () => (window.innerWidth <= 680 ? 142 : 190);
         const availableTimelineWidth = () => Math.max(180, scrollArea.clientWidth - labelWidth());
-        const minuteWidth = () => Math.max(.55, availableTimelineWidth() / 1440) * zoomFactors[zoomIndex];
+        const minuteWidth = () => {
+            let width = Math.max(.55, availableTimelineWidth() / 1440) * zoomFactors[zoomIndex];
+            if (zoomIndex !== zoomFactors.length - 1 || !currentData) return width;
+            const slotWidth = zoomProcessSlots[zoomIndex];
+            allFlights(currentData).filter(flightMatchesFilters).forEach((flight) => {
+                const duration = Number(flight.duration_minutes);
+                const processCount = (flight.processes || []).length;
+                if (!Number.isFinite(duration) || duration <= 0 || processCount === 0) return;
+                width = Math.max(width, ((processCount * slotWidth) + 18) / duration);
+            });
+            return width;
+        };
         const compactDateTime = (value) => {
             if (!value) return '-';
             const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
@@ -370,7 +382,12 @@
         };
         const appendCompactProcesses = (list, flight, barWidth, slotWidth) => {
             const priority = { started: 0, not_started: 1, finished: 2, not_used: 3 };
-            const ordered = (flight.processes || []).map((process, index) => ({ process, index }))
+            const processes = flight.processes || [];
+            if (zoomIndex === zoomFactors.length - 1) {
+                processes.forEach((process) => list.append(processIcon(process)));
+                return;
+            }
+            const ordered = processes.map((process, index) => ({ process, index }))
                 .sort((left, right) => (priority[left.process.state] ?? 4) - (priority[right.process.state] ?? 4) || left.index - right.index)
                 .map((item) => item.process);
             const slots = Math.max(1, Math.floor(Math.max(slotWidth, barWidth - 6) / slotWidth));
@@ -395,6 +412,7 @@
             const viewData = filteredTimelineData(data);
             const previousScroll = scrollArea.scrollLeft;
             const currentMinuteWidth = minuteWidth();
+            const previousMinuteWidth = renderedMinuteWidth || currentMinuteWidth;
             const axisWidth = labelWidth();
             const timeWidth = 1440 * currentMinuteWidth;
             const canvasWidth = axisWidth + timeWidth;
@@ -490,14 +508,18 @@
             zoomOut.disabled = zoomIndex === 0;
             zoomIn.disabled = zoomIndex === zoomFactors.length - 1;
             nowButton.disabled = data.now_minute === null;
+            renderedMinuteWidth = currentMinuteWidth;
             if (selectedFlightId) {
                 const selected = findFlight(selectedFlightId);
                 if (selected) openDrawer(selected, true); else closeDrawer();
             }
             requestAnimationFrame(() => {
-                scrollArea.scrollLeft = scrollTarget !== null
-                    ? Math.max(0, (scrollTarget * currentMinuteWidth) - (availableTimelineWidth() / 2))
-                    : previousScroll;
+                if (scrollTarget !== null) {
+                    scrollArea.scrollLeft = Math.max(0, (scrollTarget * currentMinuteWidth) - (availableTimelineWidth() / 2));
+                    return;
+                }
+                const centerMinute = (previousScroll + (availableTimelineWidth() / 2)) / previousMinuteWidth;
+                scrollArea.scrollLeft = Math.max(0, (centerMinute * currentMinuteWidth) - (availableTimelineWidth() / 2));
             });
         };
 
@@ -533,9 +555,18 @@
             const buttons = Array.from(form.querySelectorAll('button'));
             buttons.forEach((button) => { button.disabled = true; });
             try {
-                const response = await fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: new FormData(form),
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
                 const contentType = response.headers.get('content-type') || '';
-                if (!contentType.includes('application/json')) throw new Error('Oturum veya timeline işlem bağlantısı yenilenmeli. Sayfayı bir kez yenileyin.');
+                if (!contentType.includes('application/json')) {
+                    const redirectedToLogin = response.redirected && new URL(response.url, window.location.origin).pathname.endsWith('/login');
+                    throw new Error(redirectedToLogin ? 'Oturumunuz sona ermiş. Yeniden giriş yapın.' : `Timeline işlem servisi JSON yanıtı vermedi (HTTP ${response.status}).`);
+                }
                 const result = await response.json();
                 if (!response.ok || !result.ok) throw new Error(result.error || 'İşlem tamamlanamadı.');
                 drawerDirty = false;
