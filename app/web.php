@@ -73,7 +73,7 @@ function handle_action(array $user, string $path): never
             '/flight' => ['start_flight', 'save_process', 'complete_flight'],
             '/imports' => ['stage_import', 'create_manual_flight'],
             '/imports/review' => ['update_import_rows', 'delete_import_rows', 'discard_import', 'commit_import'],
-            '/timeline' => ['save_timeline_defaults', 'save_timeline_rule', 'delete_timeline_rule'],
+            '/timeline' => ['save_timeline_defaults', 'save_timeline_rule', 'delete_timeline_rule', 'save_timeline_flight', 'assign_timeline_flight', 'change_timeline_flight_status'],
             '/profile' => ['change_password'],
         ];
         if (!in_array($action, $allowedActions[$path] ?? [], true)) throw new RuntimeException('İşlem bu sayfadan çalıştırılamaz.');
@@ -174,6 +174,18 @@ function handle_action(array $user, string $path): never
                 TimelineService::deleteRule($user, (int)($_POST['rule_id'] ?? 0));
                 $redirect = timeline_redirect($_POST);
                 break;
+            case 'save_timeline_flight':
+                FlightService::save($user, $_POST);
+                $redirect = timeline_redirect($_POST, 'timeline-board');
+                break;
+            case 'assign_timeline_flight':
+                FlightService::assign($user, (int)($_POST['flight_id'] ?? 0), (int)($_POST['user_id'] ?? 0));
+                $redirect = timeline_redirect($_POST, 'timeline-board');
+                break;
+            case 'change_timeline_flight_status':
+                FlightService::changeStatusByAdmin($user, (int)($_POST['flight_id'] ?? 0), (string)($_POST['target_status'] ?? ''));
+                $redirect = timeline_redirect($_POST, 'timeline-board');
+                break;
             case 'change_password':
                 Auth::changePassword($user, $_POST);
                 $redirect = '/profile';
@@ -188,12 +200,12 @@ function handle_action(array $user, string $path): never
     redirect_to($redirect);
 }
 
-function timeline_redirect(array $data): string
+function timeline_redirect(array $data, string $fragment = 'timeline-rules'): string
 {
     $query = ['date' => TimelineService::normalizeDate((string)($data['timeline_date'] ?? date('Y-m-d')))];
-    $airlineId = (int)($data['timeline_airline_id'] ?? $data['airline_id'] ?? 0);
+    $airlineId = (int)($data['timeline_airline_id'] ?? 0);
     if ($airlineId > 0) $query['airline_id'] = $airlineId;
-    return '/timeline?' . http_build_query($query) . '#timeline-rules';
+    return '/timeline?' . http_build_query($query) . '#' . $fragment;
 }
 
 function render_timeline_data(array $user): void
@@ -346,10 +358,14 @@ function render_timeline(array $actor): void
     $nextDate = $dateObject->modify('+1 day')->format('Y-m-d');
     $today = date('Y-m-d');
     $canManage = UserService::isAdmin((int)$actor['id']) && can($actor, 'timeline.manage');
+    $flightTypes = DB::fetchAll('SELECT id, name FROM flight_types WHERE status = "active" ORDER BY id');
+    $timelineUsers = can($actor, 'flights.assign')
+        ? DB::fetchAll('SELECT id, username, first_name, last_name FROM users WHERE status = "active" AND deleted_at IS NULL ORDER BY first_name, last_name')
+        : [];
     ?>
     <section class="panel timeline-intro">
         <div class="section-heading">
-            <div><p class="eyebrow">Günlük operasyon panosu</p><h2><?= e($dateObject->format('d.m.Y')) ?></h2><p class="muted">ETA/ETD öncelikli zaman aralıkları ve canlı operasyon süreçleri. Veriler 15 saniyede bir yenilenir.</p></div>
+            <div><p class="eyebrow">Günlük operasyon panosu</p><h2><?= e($dateObject->format('d.m.Y')) ?></h2><p class="muted">Operasyon memuru bazında ETA/ETD öncelikli canlı takip. Veriler 15 saniyede bir yenilenir.</p></div>
             <div class="timeline-legend" aria-label="Uçuş durumları"><span class="scheduled">Planlanan</span><span class="active">Devam ediyor</span><span class="completed">Tamamlanan</span><span class="cancelled">İptal</span></div>
         </div>
     </section>
@@ -363,6 +379,7 @@ function render_timeline(array $actor): void
         <div class="timeline-view-tools">
             <button type="button" class="btn btn-ghost btn-small" data-timeline-now>Şimdiye Git</button>
             <button type="button" class="btn btn-ghost btn-small" data-timeline-refresh>Yenile</button>
+            <button type="button" class="btn btn-ghost btn-small" data-timeline-focus aria-pressed="false">⛶ Tam Ekran</button>
             <span class="timeline-zoom-controls" aria-label="Yakınlaştırma">
                 <button type="button" class="btn btn-small" data-timeline-zoom-out aria-label="Uzaklaştır">−</button>
                 <span data-timeline-zoom-label>100%</span>
@@ -371,17 +388,57 @@ function render_timeline(array $actor): void
             <span class="timeline-updated" data-timeline-updated aria-live="polite">Hazırlanıyor…</span>
         </div>
     </section>
-    <section class="timeline-root"
+    <section class="timeline-root" id="timeline-board"
              data-timeline-root
              data-timeline-date="<?= e($date) ?>"
-             data-timeline-data-url="<?= e(url_for('/timeline/data')) ?>"
-             data-timeline-flight-url="<?= e(url_for('/flight')) ?>">
+             data-timeline-data-url="<?= e(url_for('/timeline/data')) ?>">
         <div class="panel timeline-feedback" data-timeline-feedback>Uçuşlar yükleniyor…</div>
         <div class="timeline-scroll panel" data-timeline-scroll tabindex="0" aria-label="Günlük uçuş zaman çizelgesi">
             <div class="timeline-canvas" data-timeline-canvas></div>
         </div>
         <section class="panel timeline-missing" data-timeline-missing hidden><div class="section-heading"><div><p class="eyebrow">Kontrol gerekli</p><h2>Zaman bilgisi eksik uçuşlar</h2></div></div><div class="timeline-missing-list" data-timeline-missing-list></div></section>
     </section>
+
+    <div class="timeline-drawer-layer" data-timeline-drawer-layer hidden>
+        <button type="button" class="timeline-drawer-backdrop" data-timeline-drawer-close aria-label="Paneli kapat"></button>
+        <aside class="timeline-drawer" data-timeline-drawer role="dialog" aria-modal="true" aria-hidden="true" aria-label="Uçuş düzenleme paneli">
+            <header class="timeline-drawer-header"><div><p class="eyebrow">Canlı uçuş</p><h2 data-timeline-drawer-title>Uçuş detayı</h2><p class="muted" data-timeline-drawer-meta></p></div><button type="button" class="btn btn-small" data-timeline-drawer-close aria-label="Kapat">✕</button></header>
+            <div class="timeline-drawer-feedback" data-timeline-drawer-feedback hidden></div>
+            <section class="timeline-drawer-section"><h3>Operasyon süreçleri</h3><div class="timeline-drawer-processes" data-timeline-drawer-processes></div></section>
+            <form method="post" action="<?= e(url_for('/timeline')) ?>" class="timeline-drawer-form" data-timeline-flight-form>
+                <input type="hidden" name="action" value="save_timeline_flight"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><input type="hidden" name="airline_id"><input type="hidden" name="status"><?= csrf_field() ?>
+                <div class="timeline-drawer-grid">
+                    <label>Uçuş tipi<select name="flight_type_id" required><?php options_rows($flightTypes, 0, 'name'); ?></select></label>
+                    <label>Park<input name="stand"></label>
+                    <label>Arrival uçuş no<input name="arrival_flight_number"></label><label>Departure uçuş no<input name="departure_flight_number"></label>
+                    <label>Arrival origin<input name="arrival_origin"></label><label>Arrival destination<input name="arrival_destination"></label>
+                    <label>Departure origin<input name="departure_origin"></label><label>Departure destination<input name="departure_destination"></label>
+                    <label>STA<input type="datetime-local" name="scheduled_arrival_at"></label><label>ETA<input type="datetime-local" name="estimated_arrival_at"></label>
+                    <label>STD<input type="datetime-local" name="scheduled_departure_at"></label><label>ETD<input type="datetime-local" name="estimated_departure_at"></label>
+                    <label>Kuyruk no<input name="tail_number"></label><label>Uçak tipi<input name="aircraft_type"></label>
+                    <label class="full">Not<textarea name="note" rows="2"></textarea></label>
+                </div>
+                <p class="timeline-drawer-readonly muted" data-timeline-drawer-readonly hidden>Bu uçuşta bilgi düzenleme yetkiniz yok.</p>
+                <button class="btn btn-primary" data-timeline-flight-save>Uçuş Bilgilerini Kaydet</button>
+            </form>
+            <?php if ($timelineUsers): ?>
+                <form method="post" action="<?= e(url_for('/timeline')) ?>" class="timeline-drawer-assign" data-timeline-assign-form>
+                    <input type="hidden" name="action" value="assign_timeline_flight"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><?= csrf_field() ?>
+                    <label>Operasyon memuru<select name="user_id"><option value="0">Atanmamış</option><?php foreach ($timelineUsers as $timelineUser): ?><option value="<?= (int)$timelineUser['id'] ?>"><?= e(trim($timelineUser['first_name'] . ' ' . $timelineUser['last_name']) . ' · ' . $timelineUser['username']) ?></option><?php endforeach; ?></select></label>
+                    <button class="btn btn-success">Atamayı Kaydet</button>
+                    <small data-timeline-assign-note>Atama yalnızca planlanan uçuşlarda değiştirilebilir.</small>
+                </form>
+            <?php endif; ?>
+            <?php if ($canManage): ?>
+                <form method="post" action="<?= e(url_for('/timeline')) ?>" class="timeline-drawer-status" data-timeline-status-form data-confirm="Uçuş durumu değiştirilecek; süreç kayıtları korunacak. Devam edilsin mi?" hidden>
+                    <input type="hidden" name="action" value="change_timeline_flight_status"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><?= csrf_field() ?>
+                    <label>Uçuş durumu<select name="target_status" required></select></label>
+                    <button class="btn btn-warning">Durumu Değiştir</button>
+                    <small>Süreç kayıtları korunur. Devam eden uçuş planlanana alınırsa mevcut atama kaldırılır.</small>
+                </form>
+            <?php endif; ?>
+        </aside>
+    </div>
 
     <?php if ($canManage):
         $settings = TimelineService::settings();

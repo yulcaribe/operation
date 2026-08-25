@@ -671,6 +671,7 @@ final class TimelineService
         $dayEnd = $dayStart->modify('+1 day');
         $searchStart = $dayStart->modify('-1 day')->format('Y-m-d H:i:s');
         $searchEnd = $dayEnd->modify('+1 day')->format('Y-m-d H:i:s');
+        $isAdmin = UserService::isAdmin((int)$actor['id']);
         $settings = self::settings();
         $ruleRows = DB::fetchAll('SELECT airline_id, aircraft_type, arrival_minutes, departure_minutes FROM flight_timeline_rules');
         $rules = [];
@@ -681,13 +682,12 @@ final class TimelineService
 
         $candidates = DB::fetchAll(
             'SELECT f.*, a.name AS airline_name, a.icao_code, ft.code AS flight_type_code, ft.name AS flight_type_name,
-                    (SELECT CONCAT(u.first_name, " ", u.last_name)
-                     FROM flight_assignments fa JOIN users u ON u.id = fa.user_id
-                     WHERE fa.flight_id = f.id AND fa.status IN ("active", "completed")
-                     ORDER BY fa.id DESC LIMIT 1) AS assignee_name
+                    fa.user_id AS assignee_user_id, CONCAT(u.first_name, " ", u.last_name) AS assignee_name
              FROM flights f
              JOIN airlines a ON a.id = f.airline_id
              JOIN flight_types ft ON ft.id = f.flight_type_id
+             LEFT JOIN flight_assignments fa ON fa.flight_id = f.id AND fa.status IN ("active", "completed")
+             LEFT JOIN users u ON u.id = fa.user_id
              WHERE f.deleted_at IS NULL AND (
                 (COALESCE(f.estimated_arrival_at, f.scheduled_arrival_at) >= ? AND COALESCE(f.estimated_arrival_at, f.scheduled_arrival_at) < ?)
                 OR (COALESCE(f.estimated_departure_at, f.scheduled_departure_at) >= ? AND COALESCE(f.estimated_departure_at, f.scheduled_departure_at) < ?)
@@ -707,6 +707,9 @@ final class TimelineService
             $departureAt = self::dateTime($flight['estimated_departure_at'] ?: $flight['scheduled_departure_at']);
             [$startAt, $endAt] = self::window((string)$flight['flight_type_code'], $arrivalAt, $departureAt, $arrivalMinutes, $departureMinutes);
             $item = self::flightItem($flight, $arrivalMinutes, $departureMinutes);
+            $item['can_edit'] = can($actor, 'flights.update', $context);
+            $item['can_assign'] = $flight['status'] === 'scheduled' && can($actor, 'flights.assign', $context);
+            $item['can_change_status'] = $isAdmin && in_array($flight['status'], ['active', 'completed'], true);
             if (!$startAt || !$endAt) {
                 $anchor = $arrivalAt ?: $departureAt;
                 if ($anchor && $anchor->format('Y-m-d') === $date) {
@@ -738,8 +741,12 @@ final class TimelineService
         unset($flight);
 
         usort($flights, static function (array $left, array $right): int {
-            $icaoOrder = strcmp((string)$left['icao_code'], (string)$right['icao_code']);
-            if ($icaoOrder !== 0) return $icaoOrder;
+            $leftUnassigned = (int)$left['assignee_user_id'] === 0 ? 0 : 1;
+            $rightUnassigned = (int)$right['assignee_user_id'] === 0 ? 0 : 1;
+            $assignmentOrder = $leftUnassigned <=> $rightUnassigned;
+            if ($assignmentOrder !== 0) return $assignmentOrder;
+            $nameOrder = strcmp((string)$left['assignee_name'], (string)$right['assignee_name']);
+            if ($nameOrder !== 0) return $nameOrder;
             $timeOrder = (int)$left['sort_timestamp'] <=> (int)$right['sort_timestamp'];
             return $timeOrder !== 0 ? $timeOrder : (int)$left['id'] <=> (int)$right['id'];
         });
@@ -747,12 +754,19 @@ final class TimelineService
             $icaoOrder = strcmp((string)$left['icao_code'], (string)$right['icao_code']);
             return $icaoOrder !== 0 ? $icaoOrder : (int)$left['id'] <=> (int)$right['id'];
         });
-        $groups = [];
+        $rows = [];
         foreach ($flights as $flight) {
-            $icao = (string)$flight['icao_code'];
-            if (!isset($groups[$icao])) $groups[$icao] = ['icao_code' => $icao, 'airline_name' => $flight['airline_name'], 'flights' => []];
+            $assigneeId = (int)$flight['assignee_user_id'];
+            $rowKey = (string)$assigneeId;
+            if (!isset($rows[$rowKey])) {
+                $rows[$rowKey] = [
+                    'assignee_user_id' => $assigneeId,
+                    'assignee_name' => $assigneeId > 0 ? (string)$flight['assignee_name'] : 'Atanmamış',
+                    'flights' => [],
+                ];
+            }
             unset($flight['sort_timestamp']);
-            $groups[$icao]['flights'][] = $flight;
+            $rows[$rowKey]['flights'][] = $flight;
         }
 
         $today = date('Y-m-d');
@@ -765,7 +779,7 @@ final class TimelineService
             'date' => $date,
             'generated_at' => date(DATE_ATOM),
             'now_minute' => $nowMinute,
-            'groups' => array_values($groups),
+            'rows' => array_values($rows),
             'missing' => $missing,
             'totals' => ['flights' => count($flights), 'missing' => count($missing)],
         ];
@@ -813,15 +827,20 @@ final class TimelineService
             'airline_name' => (string)$flight['airline_name'],
             'icao_code' => (string)$flight['icao_code'],
             'flight_type_code' => (string)$flight['flight_type_code'],
+            'flight_type_id' => (int)$flight['flight_type_id'],
             'flight_type_name' => (string)$flight['flight_type_name'],
             'arrival_flight_number' => $flight['arrival_flight_number'],
             'departure_flight_number' => $flight['departure_flight_number'],
             'arrival_origin' => $flight['arrival_origin'],
+            'arrival_destination' => $flight['arrival_destination'],
+            'departure_origin' => $flight['departure_origin'],
             'departure_destination' => $flight['departure_destination'],
             'tail_number' => $flight['tail_number'],
             'aircraft_type' => $flight['aircraft_type'],
             'stand' => $flight['stand'],
             'status' => (string)$flight['status'],
+            'note' => $flight['note'],
+            'assignee_user_id' => (int)($flight['assignee_user_id'] ?? 0),
             'assignee_name' => $flight['assignee_name'],
             'scheduled_arrival_at' => $flight['scheduled_arrival_at'],
             'estimated_arrival_at' => $flight['estimated_arrival_at'],

@@ -4,8 +4,12 @@
     const menuButton = document.querySelector('[data-menu]');
     const sidebar = document.getElementById('sidebar');
     if (menuButton && sidebar) {
+        menuButton.setAttribute('aria-expanded', String(window.innerWidth > 900));
         menuButton.addEventListener('click', () => {
-            const open = document.body.classList.toggle('menu-open');
+            const desktop = window.innerWidth > 900;
+            const open = desktop
+                ? !document.body.classList.toggle('sidebar-collapsed')
+                : document.body.classList.toggle('menu-open');
             menuButton.setAttribute('aria-expanded', String(open));
         });
         document.addEventListener('click', (event) => {
@@ -139,10 +143,21 @@
         const zoomIn = document.querySelector('[data-timeline-zoom-in]');
         const nowButton = document.querySelector('[data-timeline-now]');
         const refreshButton = document.querySelector('[data-timeline-refresh]');
+        const focusButton = document.querySelector('[data-timeline-focus]');
+        const drawerLayer = document.querySelector('[data-timeline-drawer-layer]');
+        const drawer = document.querySelector('[data-timeline-drawer]');
+        const drawerTitle = document.querySelector('[data-timeline-drawer-title]');
+        const drawerMeta = document.querySelector('[data-timeline-drawer-meta]');
+        const drawerFeedback = document.querySelector('[data-timeline-drawer-feedback]');
+        const drawerProcesses = document.querySelector('[data-timeline-drawer-processes]');
+        const flightForm = document.querySelector('[data-timeline-flight-form]');
+        const assignForm = document.querySelector('[data-timeline-assign-form]');
+        const statusForm = document.querySelector('[data-timeline-status-form]');
         const zoomLevels = [1.5, 2, 3, 4];
         const zoomLabels = ['75%', '100%', '150%', '200%'];
         const stateLabels = { not_started: 'Başlamadı', started: 'Devam ediyor', finished: 'Tamamlandı', not_used: 'Kullanılmadı' };
         const stateMarks = { not_started: '○', started: '▶', finished: '✓', not_used: '╱' };
+        const flightStatusLabels = { scheduled: 'Planlanan', active: 'Devam ediyor', completed: 'Tamamlanan', cancelled: 'İptal' };
         const iconSvgs = {
             inblock: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h18M7 14l5-9 5 9M9 14h6M6 20h12"/></svg>',
             'door-open': '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21h16M6 21V4l11-2v19M17 12h3M13 12h.01"/></svg>',
@@ -157,8 +172,11 @@
         };
         let zoomIndex = 1;
         let currentData = null;
+        let selectedFlightId = 0;
+        let drawerDirty = false;
         let loading = false;
         let initialLoad = true;
+        let resizeTimer = 0;
 
         const makeElement = (tag, className = '', text = '') => {
             const element = document.createElement(tag);
@@ -166,13 +184,17 @@
             if (text !== '') element.textContent = text;
             return element;
         };
-
+        const labelWidth = () => (window.innerWidth <= 680 ? 142 : 190);
+        const availableTimelineWidth = () => Math.max(180, scrollArea.clientWidth - labelWidth());
         const compactDateTime = (value) => {
             if (!value) return '-';
             const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
             return match ? `${match[3]}.${match[2]} ${match[4]}:${match[5]}` : String(value);
         };
-
+        const dateTimeLocal = (value) => {
+            const match = String(value || '').match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+            return match ? `${match[1]}T${match[2]}` : '';
+        };
         const processTooltip = (process) => {
             const lines = [process.name, stateLabels[process.state] || process.state];
             if (process.started_at) lines.push(`Başlangıç: ${compactDateTime(process.started_at)}`);
@@ -182,15 +204,13 @@
             if (process.has_text) lines.push('Operasyon notu kaydedildi');
             return lines.join('\n');
         };
-
         const processIcon = (process) => {
             const button = makeElement('button', `timeline-process state-${process.state}`);
             button.type = 'button';
             button.innerHTML = iconSvgs[process.icon] || iconSvgs.note;
             button.dataset.tooltip = processTooltip(process);
-            button.setAttribute('aria-label', button.dataset.tooltip.replaceAll('\n', ', '));
-            const marker = makeElement('span', 'timeline-process-mark', stateMarks[process.state] || '○');
-            button.append(marker);
+            button.setAttribute('aria-label', button.dataset.tooltip.split('\n').join(', '));
+            button.append(makeElement('span', 'timeline-process-mark', stateMarks[process.state] || '○'));
             button.addEventListener('click', (event) => {
                 event.stopPropagation();
                 document.querySelectorAll('.timeline-process.is-tooltip-open').forEach((item) => { if (item !== button) item.classList.remove('is-tooltip-open'); });
@@ -198,110 +218,233 @@
             });
             return button;
         };
-
-        const flightTitle = (flight) => {
-            const arrival = flight.arrival_flight_number || '-';
-            const departure = flight.departure_flight_number || '-';
-            return `${flight.icao_code} · ${arrival} / ${departure}`;
-        };
-
+        const flightTitle = (flight) => `${flight.icao_code} · ${flight.arrival_flight_number || '-'} / ${flight.departure_flight_number || '-'}`;
         const flightMeta = (flight) => {
             const values = [];
             if (flight.stand) values.push(`Park ${flight.stand}`);
             if (flight.tail_number) values.push(flight.tail_number);
             if (flight.aircraft_type) values.push(flight.aircraft_type);
-            values.push(flight.assignee_name || 'Atanmamış');
             return values.join(' · ');
+        };
+        const allFlights = (data) => (data.rows || []).flatMap((row) => row.flights).concat(data.missing || []);
+        const findFlight = (flightId) => currentData ? allFlights(currentData).find((flight) => Number(flight.id) === Number(flightId)) : null;
+
+        const setFormValue = (form, name, value) => {
+            const field = form ? form.elements.namedItem(name) : null;
+            if (field) field.value = value === null || value === undefined ? '' : String(value);
+        };
+        const showDrawerFeedback = (message, isError = false) => {
+            if (!drawerFeedback) return;
+            drawerFeedback.hidden = false;
+            drawerFeedback.className = `timeline-drawer-feedback ${isError ? 'error' : 'success'}`;
+            drawerFeedback.textContent = message;
+        };
+        const renderDrawerProcesses = (processes) => {
+            drawerProcesses.replaceChildren();
+            processes.forEach((process) => {
+                const item = makeElement('article', `timeline-drawer-process state-${process.state}`);
+                item.append(processIcon(process));
+                const copy = makeElement('div');
+                copy.append(makeElement('strong', '', process.name));
+                copy.append(makeElement('span', '', stateLabels[process.state] || process.state));
+                const times = [process.started_at ? `Başlangıç ${compactDateTime(process.started_at)}` : '', process.finished_at ? `Bitiş ${compactDateTime(process.finished_at)}` : ''].filter(Boolean);
+                if (times.length) copy.append(makeElement('small', '', times.join(' · ')));
+                item.append(copy);
+                drawerProcesses.append(item);
+            });
+            if (!processes.length) drawerProcesses.append(makeElement('div', 'empty', 'Bu uçuş tipi için süreç bulunmuyor.'));
+        };
+        const openDrawer = (flight, preserveForm = false) => {
+            if (!drawerLayer || !drawer || !flight) return;
+            if (selectedFlightId !== Number(flight.id)) drawerDirty = false;
+            selectedFlightId = Number(flight.id);
+            drawerTitle.textContent = flightTitle(flight);
+            drawerMeta.textContent = `${flightStatusLabels[flight.status] || flight.status} · ${flight.assignee_name || 'Atanmamış'} · ${flight.start_label || 'Zaman eksik'}`;
+            renderDrawerProcesses(flight.processes || []);
+            drawerFeedback.hidden = true;
+
+            const values = {
+                flight_id: flight.id, airline_id: flight.airline_id, status: flight.status, flight_type_id: flight.flight_type_id,
+                arrival_flight_number: flight.arrival_flight_number, departure_flight_number: flight.departure_flight_number,
+                arrival_origin: flight.arrival_origin, arrival_destination: flight.arrival_destination,
+                departure_origin: flight.departure_origin, departure_destination: flight.departure_destination,
+                scheduled_arrival_at: dateTimeLocal(flight.scheduled_arrival_at), estimated_arrival_at: dateTimeLocal(flight.estimated_arrival_at),
+                scheduled_departure_at: dateTimeLocal(flight.scheduled_departure_at), estimated_departure_at: dateTimeLocal(flight.estimated_departure_at),
+                tail_number: flight.tail_number, aircraft_type: flight.aircraft_type, stand: flight.stand, note: flight.note,
+            };
+            if (!preserveForm || !drawerDirty) Object.entries(values).forEach(([name, value]) => setFormValue(flightForm, name, value));
+            flightForm.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach((field) => { field.disabled = !flight.can_edit; });
+            const saveButton = flightForm.querySelector('[data-timeline-flight-save]');
+            const readonlyMessage = flightForm.querySelector('[data-timeline-drawer-readonly]');
+            saveButton.hidden = !flight.can_edit;
+            readonlyMessage.hidden = Boolean(flight.can_edit);
+
+            if (assignForm) {
+                setFormValue(assignForm, 'flight_id', flight.id);
+                setFormValue(assignForm, 'user_id', flight.assignee_user_id || 0);
+                const select = assignForm.elements.namedItem('user_id');
+                const button = assignForm.querySelector('button');
+                const note = assignForm.querySelector('[data-timeline-assign-note]');
+                select.disabled = !flight.can_assign;
+                button.hidden = !flight.can_assign;
+                note.textContent = flight.can_assign ? 'Bu uçuş için aktif sorumluyu değiştirebilirsiniz.' : 'Atama yalnızca yetkili olduğunuz planlanan uçuşlarda değiştirilebilir.';
+            }
+            if (statusForm) {
+                const targets = flight.status === 'completed'
+                    ? [['scheduled', 'Planlanan'], ['active', 'Devam ediyor'], ['cancelled', 'İptal']]
+                    : (flight.status === 'active' ? [['scheduled', 'Planlanan']] : []);
+                setFormValue(statusForm, 'flight_id', flight.id);
+                const select = statusForm.elements.namedItem('target_status');
+                select.replaceChildren(...targets.map(([value, label]) => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = label;
+                    return option;
+                }));
+                statusForm.hidden = !flight.can_change_status || targets.length === 0;
+            }
+            drawerLayer.hidden = false;
+            drawer.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('timeline-drawer-open');
+            requestAnimationFrame(() => drawerLayer.classList.add('is-open'));
+        };
+        const closeDrawer = () => {
+            if (!drawerLayer || !drawer) return;
+            selectedFlightId = 0;
+            drawerDirty = false;
+            drawerLayer.classList.remove('is-open');
+            drawer.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('timeline-drawer-open');
+            window.setTimeout(() => { if (!drawerLayer.classList.contains('is-open')) drawerLayer.hidden = true; }, 180);
         };
 
         const renderMissing = (flights) => {
             missingList.replaceChildren();
             missingSection.hidden = flights.length === 0;
             flights.forEach((flight) => {
-                const link = makeElement('a', 'timeline-missing-card');
-                link.href = `${timelineRoot.dataset.timelineFlightUrl}?id=${flight.id}`;
-                link.append(makeElement('strong', '', flightTitle(flight)));
-                link.append(makeElement('span', '', flightMeta(flight)));
-                link.append(makeElement('small', '', flight.missing_reason || 'Zaman bilgisi eksik.'));
-                missingList.append(link);
+                const button = makeElement('button', 'timeline-missing-card');
+                button.type = 'button';
+                button.append(makeElement('strong', '', flightTitle(flight)));
+                button.append(makeElement('span', '', `${flightMeta(flight)} · ${flight.assignee_name || 'Atanmamış'}`));
+                button.append(makeElement('small', '', flight.missing_reason || 'Zaman bilgisi eksik.'));
+                button.addEventListener('click', () => openDrawer(flight));
+                missingList.append(button);
             });
+        };
+        const layoutLanes = (flights) => {
+            const laneEnds = [];
+            return flights.map((flight) => {
+                const start = Number(flight.start_minute);
+                const end = start + Number(flight.duration_minutes);
+                let lane = laneEnds.findIndex((laneEnd) => start >= laneEnd);
+                if (lane < 0) lane = laneEnds.length;
+                laneEnds[lane] = end;
+                return { flight, lane };
+            });
+        };
+        const appendCompactProcesses = (list, flight, barWidth) => {
+            const priority = { started: 0, not_started: 1, finished: 2, not_used: 3 };
+            const ordered = (flight.processes || []).map((process, index) => ({ process, index }))
+                .sort((left, right) => (priority[left.process.state] ?? 4) - (priority[right.process.state] ?? 4) || left.index - right.index)
+                .map((item) => item.process);
+            const slots = Math.max(1, Math.floor(Math.max(22, barWidth - 8) / 23));
+            const visibleCount = ordered.length > slots && slots > 1 ? slots - 1 : Math.min(ordered.length, slots);
+            ordered.slice(0, visibleCount).forEach((process) => list.append(processIcon(process)));
+            const hiddenCount = ordered.length - visibleCount;
+            if (hiddenCount > 0 && slots > 1) {
+                const more = makeElement('button', 'timeline-process-more', `+${hiddenCount}`);
+                more.type = 'button';
+                more.dataset.tooltip = ordered.slice(visibleCount).map((process) => `${process.name}: ${stateLabels[process.state] || process.state}`).join('\n');
+                more.setAttribute('aria-label', more.dataset.tooltip.split('\n').join(', '));
+                more.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    document.querySelectorAll('.timeline-process-more.is-tooltip-open').forEach((item) => { if (item !== more) item.classList.remove('is-tooltip-open'); });
+                    more.classList.toggle('is-tooltip-open');
+                });
+                list.append(more);
+            }
         };
 
         const renderTimeline = (data, scrollTarget = null) => {
             const previousScroll = scrollArea.scrollLeft;
             const minuteWidth = zoomLevels[zoomIndex];
-            const canvasWidth = 1440 * minuteWidth;
+            const axisWidth = labelWidth();
+            const timeWidth = 1440 * minuteWidth;
+            const canvasWidth = axisWidth + timeWidth;
+            const barHeight = 72;
+            const laneGap = 6;
             canvas.replaceChildren();
             canvas.style.width = `${canvasWidth}px`;
+            canvas.style.setProperty('--timeline-axis-width', `${axisWidth}px`);
             canvas.style.setProperty('--quarter-width', `${15 * minuteWidth}px`);
             canvas.style.setProperty('--hour-width', `${60 * minuteWidth}px`);
 
-            const header = makeElement('div', 'timeline-hours');
+            const header = makeElement('div', 'timeline-board-header');
+            header.append(makeElement('div', 'timeline-axis-title', 'Operasyon Memuru'));
+            const hours = makeElement('div', 'timeline-hours');
+            hours.style.left = `${axisWidth}px`;
+            hours.style.width = `${timeWidth}px`;
             for (let hour = 0; hour < 24; hour += 1) {
                 const label = makeElement('span', 'timeline-hour-label', `${String(hour).padStart(2, '0')}:00`);
                 label.style.left = `${hour * 60 * minuteWidth}px`;
-                header.append(label);
+                hours.append(label);
             }
+            header.append(hours);
             canvas.append(header);
 
-            data.groups.forEach((group) => {
-                const groupElement = makeElement('section', 'timeline-group');
-                const groupHeader = makeElement('div', 'timeline-group-header');
-                const groupTitle = makeElement('span', 'timeline-group-title');
-                groupTitle.append(makeElement('strong', '', group.icao_code));
-                groupTitle.append(makeElement('small', '', `${group.airline_name} · ${group.flights.length} uçuş`));
-                groupHeader.append(groupTitle);
-                groupElement.append(groupHeader);
+            (data.rows || []).forEach((staffRow) => {
+                const laidOut = layoutLanes(staffRow.flights || []);
+                const laneCount = Math.max(1, ...laidOut.map((item) => item.lane + 1));
+                const rowHeight = 14 + (laneCount * barHeight) + ((laneCount - 1) * laneGap);
+                const row = makeElement('section', 'timeline-staff-row');
+                row.style.height = `${rowHeight}px`;
+                const staff = makeElement('div', 'timeline-staff-label');
+                staff.append(makeElement('strong', '', staffRow.assignee_name));
+                staff.append(makeElement('small', '', `${staffRow.flights.length} uçuş${laneCount > 1 ? ` · ${laneCount} şerit` : ''}`));
+                row.append(staff);
+                const track = makeElement('div', 'timeline-staff-track');
+                track.style.left = `${axisWidth}px`;
+                track.style.width = `${timeWidth}px`;
 
-                group.flights.forEach((flight) => {
+                laidOut.forEach(({ flight, lane }) => {
                     const width = Math.max(1, Number(flight.duration_minutes) * minuteWidth);
-                    const iconsPerLine = Math.max(1, Math.floor(Math.max(20, width - 16) / 31));
-                    const iconLines = Math.max(1, Math.ceil(flight.processes.length / iconsPerLine));
-                    const rowHeight = Math.max(88, 57 + (iconLines * 31));
-                    const row = makeElement('div', 'timeline-row');
-                    row.style.height = `${rowHeight}px`;
                     const bar = makeElement('div', `timeline-flight-bar status-${flight.status}`);
                     bar.style.left = `${Number(flight.start_minute) * minuteWidth}px`;
+                    bar.style.top = `${7 + (lane * (barHeight + laneGap))}px`;
                     bar.style.width = `${width}px`;
-                    bar.style.height = `${rowHeight - 14}px`;
+                    bar.style.height = `${barHeight}px`;
                     bar.tabIndex = 0;
-                    bar.setAttribute('role', 'link');
+                    bar.setAttribute('role', 'button');
                     bar.setAttribute('aria-label', `${flightTitle(flight)}, ${flight.start_label} - ${flight.end_label}, ${flightMeta(flight)}`);
+                    if (width < 110) bar.classList.add('timeline-flight-narrow');
                     if (flight.continues_before) bar.classList.add('continues-before');
                     if (flight.continues_after) bar.classList.add('continues-after');
-                    const openFlight = () => { window.location.href = `${timelineRoot.dataset.timelineFlightUrl}?id=${flight.id}`; };
-                    bar.addEventListener('click', openFlight);
+                    bar.addEventListener('click', () => openDrawer(flight));
                     bar.addEventListener('keydown', (event) => {
                         if (event.target !== bar || (event.key !== 'Enter' && event.key !== ' ')) return;
                         event.preventDefault();
-                        openFlight();
+                        openDrawer(flight);
                     });
-
                     const heading = makeElement('div', 'timeline-flight-heading');
-                    const title = makeElement('strong', '', flightTitle(flight));
-                    title.title = `${flight.start_label}–${flight.end_label}`;
-                    heading.append(title);
+                    heading.append(makeElement('strong', '', flightTitle(flight)));
                     heading.append(makeElement('span', '', `${flight.start_label}–${flight.end_label}`));
                     bar.append(heading);
                     const meta = makeElement('div', 'timeline-flight-meta', flightMeta(flight));
                     meta.title = flightMeta(flight);
                     bar.append(meta);
                     const processList = makeElement('div', 'timeline-process-list');
-                    flight.processes.forEach((process) => processList.append(processIcon(process)));
+                    appendCompactProcesses(processList, flight, width);
                     bar.append(processList);
-                    row.append(bar);
-                    groupElement.append(row);
+                    track.append(bar);
                 });
-                canvas.append(groupElement);
+                row.append(track);
+                canvas.append(row);
             });
 
-            if (!data.groups.length) {
-                const empty = makeElement('div', 'timeline-board-empty', 'Seçili günde yetki kapsamınıza giren uçuş bulunmuyor.');
-                canvas.append(empty);
-            }
+            if (!(data.rows || []).length) canvas.append(makeElement('div', 'timeline-board-empty', 'Seçili günde yetki kapsamınıza giren uçuş bulunmuyor.'));
             if (data.now_minute !== null && Number(data.now_minute) >= 0 && Number(data.now_minute) <= 1440) {
                 const nowLine = makeElement('div', 'timeline-now-line');
-                nowLine.style.left = `${Number(data.now_minute) * minuteWidth}px`;
+                nowLine.style.left = `${axisWidth + (Number(data.now_minute) * minuteWidth)}px`;
                 nowLine.innerHTML = '<span>Şimdi</span>';
                 canvas.append(nowLine);
             }
@@ -313,13 +456,14 @@
             zoomOut.disabled = zoomIndex === 0;
             zoomIn.disabled = zoomIndex === zoomLevels.length - 1;
             nowButton.disabled = data.now_minute === null;
-
+            if (selectedFlightId) {
+                const selected = findFlight(selectedFlightId);
+                if (selected) openDrawer(selected, true); else closeDrawer();
+            }
             requestAnimationFrame(() => {
-                if (scrollTarget !== null) {
-                    scrollArea.scrollLeft = Math.max(0, (scrollTarget * minuteWidth) - (scrollArea.clientWidth / 2));
-                } else {
-                    scrollArea.scrollLeft = previousScroll;
-                }
+                scrollArea.scrollLeft = scrollTarget !== null
+                    ? Math.max(0, (scrollTarget * minuteWidth) - (availableTimelineWidth() / 2))
+                    : previousScroll;
             });
         };
 
@@ -334,8 +478,9 @@
                 const data = await response.json();
                 if (!response.ok || data.error) throw new Error(data.error || 'Zaman çizelgesi alınamadı.');
                 currentData = data;
-                const firstFlight = data.groups.flatMap((group) => group.flights)[0];
-                const initialTarget = initialLoad ? (data.now_minute !== null ? Number(data.now_minute) : Number(firstFlight?.start_minute || 0)) : null;
+                const firstRow = (data.rows || [])[0];
+                const firstFlight = firstRow && firstRow.flights ? firstRow.flights[0] : null;
+                const initialTarget = initialLoad ? (data.now_minute !== null ? Number(data.now_minute) : Number(firstFlight ? firstFlight.start_minute : 0)) : null;
                 renderTimeline(data, initialTarget);
                 initialLoad = false;
             } catch (error) {
@@ -347,29 +492,74 @@
                 loading = false;
             }
         };
-
+        const submitDrawerForm = async (event) => {
+            const form = event.target.closest('[data-timeline-flight-form], [data-timeline-assign-form], [data-timeline-status-form]');
+            if (!form || event.defaultPrevented) return;
+            event.preventDefault();
+            const buttons = Array.from(form.querySelectorAll('button'));
+            buttons.forEach((button) => { button.disabled = true; });
+            try {
+                const response = await fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
+                const html = await response.text();
+                const page = new DOMParser().parseFromString(html, 'text/html');
+                const flash = page.querySelector('.flash');
+                if (!response.ok || (flash && flash.classList.contains('error'))) throw new Error(flash ? flash.textContent.trim() : 'İşlem tamamlanamadı.');
+                drawerDirty = false;
+                await loadTimeline(true);
+                showDrawerFeedback(flash ? flash.textContent.trim() : 'Değişiklik kaydedildi.');
+            } catch (error) {
+                showDrawerFeedback(error instanceof Error ? error.message : 'İşlem tamamlanamadı.', true);
+            } finally {
+                buttons.forEach((button) => { button.disabled = false; });
+            }
+        };
         const changeZoom = (direction) => {
             if (!currentData) return;
             const oldWidth = zoomLevels[zoomIndex];
-            const centerMinute = (scrollArea.scrollLeft + (scrollArea.clientWidth / 2)) / oldWidth;
+            const centerMinute = (scrollArea.scrollLeft + (availableTimelineWidth() / 2)) / oldWidth;
             zoomIndex = Math.max(0, Math.min(zoomLevels.length - 1, zoomIndex + direction));
             renderTimeline(currentData, centerMinute);
         };
+        const setFocusMode = (enabled) => {
+            document.body.classList.toggle('timeline-focus-mode', enabled);
+            focusButton.setAttribute('aria-pressed', String(enabled));
+            focusButton.textContent = enabled ? '✕ Tam Ekrandan Çık' : '⛶ Tam Ekran';
+            try { window.localStorage.setItem('operation.timelineFocus', enabled ? '1' : '0'); } catch (error) { /* storage kapalı olabilir */ }
+        };
 
+        document.querySelectorAll('[data-timeline-drawer-close]').forEach((button) => button.addEventListener('click', closeDrawer));
+        if (flightForm) flightForm.addEventListener('input', () => { drawerDirty = true; });
+        if (flightForm) flightForm.addEventListener('submit', submitDrawerForm);
+        if (assignForm) assignForm.addEventListener('submit', submitDrawerForm);
+        if (statusForm) statusForm.addEventListener('submit', submitDrawerForm);
         zoomOut.addEventListener('click', () => changeZoom(-1));
         zoomIn.addEventListener('click', () => changeZoom(1));
         refreshButton.addEventListener('click', () => loadTimeline(true));
+        focusButton.addEventListener('click', () => {
+            const minuteWidth = zoomLevels[zoomIndex];
+            const centerMinute = currentData ? (scrollArea.scrollLeft + (availableTimelineWidth() / 2)) / minuteWidth : null;
+            setFocusMode(!document.body.classList.contains('timeline-focus-mode'));
+            if (currentData) requestAnimationFrame(() => renderTimeline(currentData, centerMinute));
+        });
         nowButton.addEventListener('click', () => {
             if (!currentData || currentData.now_minute === null) return;
             const minuteWidth = zoomLevels[zoomIndex];
-            scrollArea.scrollTo({ left: Math.max(0, (Number(currentData.now_minute) * minuteWidth) - (scrollArea.clientWidth / 2)), behavior: 'smooth' });
+            scrollArea.scrollTo({ left: Math.max(0, (Number(currentData.now_minute) * minuteWidth) - (availableTimelineWidth() / 2)), behavior: 'smooth' });
         });
         document.addEventListener('click', (event) => {
-            if (event.target.closest('.timeline-process')) return;
-            document.querySelectorAll('.timeline-process.is-tooltip-open').forEach((item) => item.classList.remove('is-tooltip-open'));
+            if (event.target.closest('.timeline-process, .timeline-process-more')) return;
+            document.querySelectorAll('.timeline-process.is-tooltip-open, .timeline-process-more.is-tooltip-open').forEach((item) => item.classList.remove('is-tooltip-open'));
         });
+        document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && selectedFlightId) closeDrawer(); });
         document.addEventListener('visibilitychange', () => { if (!document.hidden) loadTimeline(true); });
+        window.addEventListener('resize', () => {
+            window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(() => { if (currentData) renderTimeline(currentData); }, 120);
+        });
         window.setInterval(() => { if (!document.hidden) loadTimeline(); }, 15000);
+        let savedFocus = false;
+        try { savedFocus = window.localStorage.getItem('operation.timelineFocus') === '1'; } catch (error) { /* storage kapalı olabilir */ }
+        setFocusMode(savedFocus);
         loadTimeline();
     }
 })();
