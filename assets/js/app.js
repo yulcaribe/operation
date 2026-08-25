@@ -555,7 +555,9 @@
             const buttons = Array.from(form.querySelectorAll('button'));
             buttons.forEach((button) => { button.disabled = true; });
             try {
-                const response = await fetch(form.action, {
+                const endpoint = form.getAttribute('action');
+                if (!endpoint) throw new Error('Timeline işlem adresi bulunamadı.');
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     body: new FormData(form),
                     credentials: 'same-origin',

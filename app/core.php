@@ -35,7 +35,14 @@ function url_for(string $path = ''): string
 
 function asset_url(string $path): string
 {
-    return url_for('/' . ltrim($path, '/'));
+    $relativePath = ltrim($path, '/');
+    $url = url_for('/' . $relativePath);
+    $filePath = defined('BASE_PATH') ? BASE_PATH . '/' . $relativePath : '';
+    if ($filePath !== '' && is_file($filePath)) {
+        $modifiedAt = filemtime($filePath);
+        if ($modifiedAt !== false) return $url . '?v=' . $modifiedAt;
+    }
+    return $url;
 }
 
 function redirect_to(string $path): never
