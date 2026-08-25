@@ -300,26 +300,34 @@ final class FlightService
         }
     }
 
-    public static function restoreCompletedStatus(array $actor, int $flightId, string $targetStatus): void
+    public static function changeStatusByAdmin(array $actor, int $flightId, string $targetStatus): void
     {
-        if (!UserService::isAdmin((int)$actor['id'])) throw new RuntimeException('Tamamlanan uçuş durumunu yalnızca admin değiştirebilir.');
+        if (!UserService::isAdmin((int)$actor['id'])) throw new RuntimeException('Bu uçuş durumu değişikliğini yalnızca admin yapabilir.');
         $flight = self::find($flightId);
         if (!$flight) throw new RuntimeException('Uçuş bulunamadı.');
-        if ($flight['status'] !== 'completed') throw new RuntimeException('Yalnızca tamamlanmış uçuşun durumu geri alınabilir.');
-        if (!in_array($targetStatus, ['scheduled', 'active', 'cancelled'], true)) throw new RuntimeException('Hedef uçuş durumu geçersiz.');
+        $currentStatus = (string)$flight['status'];
+        $allowedTargets = $currentStatus === 'completed'
+            ? ['scheduled', 'active', 'cancelled']
+            : ($currentStatus === 'active' ? ['scheduled'] : []);
+        if (!in_array($targetStatus, $allowedTargets, true)) {
+            throw new RuntimeException('Bu uçuş için istenen durum geçişine izin verilmiyor.');
+        }
 
         DB::begin();
         try {
             $changed = DB::execute(
-                'UPDATE flights SET status = ?, updated_by = ? WHERE id = ? AND status = "completed"',
-                [$targetStatus, (int)$actor['id'], $flightId]
+                'UPDATE flights SET status = ?, updated_by = ? WHERE id = ? AND status = ?',
+                [$targetStatus, (int)$actor['id'], $flightId, $currentStatus]
             );
             if ($changed !== 1) throw new RuntimeException('Uçuş başka bir işlem tarafından değiştirilmiş.');
-            if (in_array($targetStatus, ['scheduled', 'active'], true)) {
+            if ($currentStatus === 'completed' && in_array($targetStatus, ['scheduled', 'active'], true)) {
                 $assignment = DB::fetch('SELECT id FROM flight_assignments WHERE flight_id = ? AND status = "completed" ORDER BY id DESC LIMIT 1', [$flightId]);
                 if ($assignment) DB::execute('UPDATE flight_assignments SET status = "active", unassigned_at = NULL WHERE id = ?', [(int)$assignment['id']]);
             }
-            Audit::record((int)$actor['id'], 'flight.status_restored', 'flight', $flightId, ['from' => 'completed', 'to' => $targetStatus]);
+            if ($currentStatus === 'active' && $targetStatus === 'scheduled') {
+                DB::execute('UPDATE flight_assignments SET status = "revoked", unassigned_at = NOW() WHERE flight_id = ? AND status = "active"', [$flightId]);
+            }
+            Audit::record((int)$actor['id'], 'flight.status_changed_by_admin', 'flight', $flightId, ['from' => $currentStatus, 'to' => $targetStatus]);
             DB::commit();
         } catch (Throwable $error) { DB::rollback(); throw $error; }
     }

@@ -89,7 +89,7 @@ function handle_action(array $user, string $path): never
             case 'restore_flight_status':
                 $flightId = (int)($_POST['flight_id'] ?? 0);
                 $targetStatus = (string)($_POST['target_status'] ?? '');
-                FlightService::restoreCompletedStatus($user, $flightId, $targetStatus);
+                FlightService::changeStatusByAdmin($user, $flightId, $targetStatus);
                 $flight = FlightService::find($flightId);
                 $redirect = $targetStatus === 'scheduled' && $flight && can($user, 'flights.assign', FlightService::context($flight))
                     ? '/flights/assign?id=' . $flightId
@@ -437,6 +437,8 @@ function render_flight_edit(array $actor): void
     </section>
     <?php if ($isAdmin && $flight['status'] === 'completed'): ?>
         <section class="panel status-restore"><h2>Tamamlanan uçuşun durumunu değiştir</h2><p class="muted">Süreç kayıtları aynen korunur ve sıfırlanmaz. Planlanan seçildiğinde sorumlu atama ekranı açılır; mevcut kullanıcıyı bırakabilir veya başka kullanıcı seçebilirsin.</p><form method="post" class="inline-form" data-confirm="Tamamlanan uçuş seçilen duruma geri alınacak; süreç kayıtları korunacak. Devam edilsin mi?"><input type="hidden" name="action" value="restore_flight_status"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><label>Yeni durum<select name="target_status" required><option value="scheduled">Planlanan</option><option value="active">Devam ediyor</option><option value="cancelled">İptal</option></select></label><button class="btn btn-warning">Durumu Kaydet</button></form></section>
+    <?php elseif ($isAdmin && $flight['status'] === 'active'): ?>
+        <section class="panel status-restore"><h2>Yanlışlıkla başlatılan uçuş</h2><p class="muted">Uçuş planlanan duruma döner ve mevcut kullanıcı ataması kaldırılır. Süreç kayıtları aynen korunur; sonraki ekranda yeni sorumluyu seçebilirsin.</p><form method="post" data-confirm="Devam eden uçuş planlanan duruma alınacak, mevcut kullanıcıdan kaldırılacak ve süreç kayıtları korunacak. Devam edilsin mi?"><input type="hidden" name="action" value="restore_flight_status"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="target_status" value="scheduled"><?= csrf_field() ?><button class="btn btn-warning">Planlanana Al ve Yeniden Ata</button></form></section>
     <?php endif; ?>
     <?php if (can($actor, 'flights.delete', FlightService::context($flight))): ?><section class="panel danger-zone"><h2>Uçuşu kalıcı sil</h2><p>Uçuş ve bağlı operasyon kayıtları sistemden silinir; yalnızca kısa işlem kaydı tutulur.</p><form method="post" data-confirm="Uçuş kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam edilsin mi?"><input type="hidden" name="action" value="delete_flight"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><button class="btn btn-danger">Uçuşu Sil</button></form></section><?php endif;
 }
@@ -456,8 +458,8 @@ function render_flight_assign(array $actor): void
         <article class="panel flight-leg"><p class="eyebrow">Arrival</p><h2><?= e($flight['arrival_flight_number'] ?: '-') ?></h2><p><?= e(($flight['arrival_origin'] ?: '-') . ' → ' . ($flight['arrival_destination'] ?: '-')) ?></p><small>STA <?= e($flight['scheduled_arrival_at'] ? date('d.m.Y H:i', strtotime($flight['scheduled_arrival_at'])) : '-') ?></small></article>
         <article class="panel flight-leg"><p class="eyebrow">Departure / devam seferi</p><h2><?= e($flight['departure_flight_number'] ?: '-') ?></h2><p><?= e(($flight['departure_origin'] ?: '-') . ' → ' . ($flight['departure_destination'] ?: '-')) ?></p><small>STD <?= e($flight['scheduled_departure_at'] ? date('d.m.Y H:i', strtotime($flight['scheduled_departure_at'])) : '-') ?></small></article>
     </section>
-    <?php if ($flight['status'] === 'completed' && UserService::isAdmin((int)$actor['id'])): ?>
-    <section class="panel status-restore"><h2>Uçuşu yeniden atamaya aç</h2><p class="muted">Uçuş planlanan duruma alınır. Önceki süreç kayıtları aynen korunur; sonraki ekranda mevcut kullanıcıyı bırakabilir veya başka kullanıcı seçebilirsin.</p><form method="post" data-confirm="Uçuş planlanan duruma alınacak; süreç kayıtları korunacak. Devam edilsin mi?"><input type="hidden" name="action" value="restore_flight_status"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="target_status" value="scheduled"><?= csrf_field() ?><button class="btn btn-warning">Planlanana Al ve Yeniden Ata</button></form></section>
+    <?php if (in_array($flight['status'], ['active', 'completed'], true) && UserService::isAdmin((int)$actor['id'])): ?>
+    <section class="panel status-restore"><h2>Uçuşu yeniden atamaya aç</h2><p class="muted">Uçuş planlanan duruma alınır ve süreç kayıtları aynen korunur. Devam eden uçuşsa mevcut atama kaldırılır; sonraki ekranda yeni sorumluyu seçebilirsin.</p><form method="post" data-confirm="Uçuş planlanan duruma alınacak ve süreç kayıtları korunacak. Devam edilsin mi?"><input type="hidden" name="action" value="restore_flight_status"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="target_status" value="scheduled"><?= csrf_field() ?><button class="btn btn-warning">Planlanana Al ve Yeniden Ata</button></form></section>
     <?php elseif (in_array($flight['status'], ['completed', 'cancelled'], true)): ?>
     <section class="panel notice">Tamamlanmış veya iptal edilmiş uçuşun sorumlusu değiştirilemez.</section>
     <?php else: ?>
