@@ -196,6 +196,28 @@ final class AirlineService
 
 final class FlightService
 {
+    public static function assignedTasks(array $actor): array
+    {
+        return DB::fetchAll(
+            'SELECT f.*, a.name AS airline_name, a.icao_code, a.iata_code, ft.name AS flight_type_name,
+                    fa.status AS assignment_status
+             FROM flight_assignments fa
+             JOIN flights f ON f.id = fa.flight_id
+             JOIN airlines a ON a.id = f.airline_id
+             JOIN flight_types ft ON ft.id = f.flight_type_id
+             WHERE fa.user_id = ? AND fa.status IN ("active", "completed")
+               AND f.deleted_at IS NULL AND f.status IN ("scheduled", "active", "completed")
+               AND fa.id = (
+                    SELECT MAX(latest.id) FROM flight_assignments latest
+                    WHERE latest.flight_id = fa.flight_id AND latest.status IN ("active", "completed")
+               )
+             ORDER BY CASE f.status WHEN "active" THEN 0 WHEN "scheduled" THEN 1 ELSE 2 END,
+                      CASE WHEN f.status = "completed" THEN COALESCE(f.updated_at, f.created_at) END DESC,
+                      COALESCE(f.scheduled_arrival_at, f.scheduled_departure_at) ASC',
+            [(int)$actor['id']]
+        );
+    }
+
     public static function allVisible(array $actor, array $filters = [], string $permission = 'flights.view'): array
     {
         $params = [];
@@ -434,31 +456,53 @@ final class ProcessService
         $mapped = DB::fetch('SELECT pt.input_type FROM flight_type_process_map m JOIN process_types pt ON pt.id = m.process_type_id WHERE m.flight_type_id = ? AND m.process_type_id = ?', [(int)$flight['flight_type_id'], $processTypeId]);
         if (!$mapped) throw new RuntimeException('Süreç bu uçuş tipine ait değil.');
         $allowedActions = [
-            'state' => ['start', 'finish', 'not_used', 'reset'],
-            'datetime' => ['mark_time', 'reset'],
-            'text' => ['save_text', 'reset'],
+            'state' => ['start', 'finish', 'not_used', 'undo', 'reset'],
+            'datetime' => ['mark_time', 'undo', 'reset'],
+            'text' => ['save_text', 'undo', 'reset'],
         ];
         if (!in_array($action, $allowedActions[$mapped['input_type']] ?? [], true)) throw new RuntimeException('Süreç veri tipiyle işlem uyuşmuyor.');
         $current = DB::fetch('SELECT * FROM flight_processes WHERE flight_id = ? AND process_type_id = ?', [$flightId, $processTypeId]);
+        $currentState = (string)($current['state'] ?? 'not_started');
         $alreadyRecorded = $current && (
             $current['state'] === 'finished'
             || $current['value_datetime'] !== null
             || trim((string)$current['value_text']) !== ''
         );
-        if (($alreadyRecorded || in_array($flight['status'], ['completed', 'cancelled', 'archived'], true)) && $action !== 'reset') {
+        if (($alreadyRecorded || in_array($flight['status'], ['completed', 'cancelled', 'archived'], true)) && !in_array($action, ['undo', 'reset'], true)) {
             Authorization::require($actor, 'processes.override', FlightService::context($flight));
         }
         $state = 'not_started'; $started = null; $finished = null; $valueDate = null; $valueText = null;
-        if ($action === 'start') { $state = 'started'; $started = date('Y-m-d H:i:s'); }
-        elseif ($action === 'finish') { $state = 'finished'; $started = $current['started_at'] ?? date('Y-m-d H:i:s'); $finished = date('Y-m-d H:i:s'); }
-        elseif ($action === 'not_used') { $state = 'not_used'; }
+        if ($action === 'start') {
+            if ($currentState !== 'not_started') throw new RuntimeException('Bu süreç zaten başlatılmış veya sonuçlandırılmış.');
+            $state = 'started'; $started = date('Y-m-d H:i:s');
+        }
+        elseif ($action === 'finish') {
+            if ($currentState !== 'started') throw new RuntimeException('Süreci bitirmeden önce başlatmalısınız.');
+            $state = 'finished'; $started = $current['started_at'] ?? date('Y-m-d H:i:s'); $finished = date('Y-m-d H:i:s');
+        }
+        elseif ($action === 'not_used') {
+            if ($currentState !== 'not_started') throw new RuntimeException('Yalnızca başlamamış süreç kullanılmadı olarak işaretlenebilir.');
+            $state = 'not_used';
+        }
+        elseif ($action === 'undo') {
+            $hasUndoableValue = $current && (
+                $currentState !== 'not_started'
+                || $current['value_datetime'] !== null
+                || trim((string)$current['value_text']) !== ''
+            );
+            if (!$hasUndoableValue) throw new RuntimeException('Geri alınabilecek bir süreç işlemi bulunamadı.');
+            if ($mapped['input_type'] === 'state' && $currentState === 'finished') {
+                $state = 'started';
+                $started = $current['started_at'] ?? date('Y-m-d H:i:s');
+            }
+        }
         elseif ($action === 'mark_time') { $state = 'finished'; $valueDate = datetime_input($data['value_datetime'] ?? '') ?: date('Y-m-d H:i:s'); }
         elseif ($action === 'save_text') { $valueText = trim((string)($data['value_text'] ?? '')); $state = $valueText === '' ? 'not_started' : 'finished'; }
         elseif ($action !== 'reset') throw new RuntimeException('Geçersiz süreç işlemi.');
         DB::execute(
             'INSERT INTO flight_processes (flight_id, process_type_id, state, started_at, finished_at, value_datetime, value_text, updated_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE state = VALUES(state), started_at = COALESCE(VALUES(started_at), started_at), finished_at = VALUES(finished_at), value_datetime = VALUES(value_datetime), value_text = VALUES(value_text), updated_by = VALUES(updated_by)',
+             ON DUPLICATE KEY UPDATE state = VALUES(state), started_at = VALUES(started_at), finished_at = VALUES(finished_at), value_datetime = VALUES(value_datetime), value_text = VALUES(value_text), updated_by = VALUES(updated_by)',
             [$flightId, $processTypeId, $state, $started, $finished, $valueDate, $valueText, (int)$actor['id']]
         );
         if ($action === 'reset') DB::execute('UPDATE flight_processes SET state = "not_started", started_at = NULL, finished_at = NULL, value_datetime = NULL, value_text = NULL, updated_by = ? WHERE flight_id = ? AND process_type_id = ?', [(int)$actor['id'], $flightId, $processTypeId]);

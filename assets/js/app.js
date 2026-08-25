@@ -16,6 +16,22 @@
         });
     }
 
+    const taskTabs = Array.from(document.querySelectorAll('[data-task-tab]'));
+    const taskPanels = Array.from(document.querySelectorAll('[data-task-panel]'));
+    if (taskTabs.length && taskPanels.length) {
+        const activateTaskTab = (name) => {
+            taskTabs.forEach((tab) => {
+                const active = tab.dataset.taskTab === name;
+                tab.classList.toggle('active', active);
+                tab.setAttribute('aria-selected', String(active));
+            });
+            taskPanels.forEach((panel) => { panel.hidden = panel.dataset.taskPanel !== name; });
+        };
+        taskTabs.forEach((tab) => tab.addEventListener('click', () => activateTaskTab(tab.dataset.taskTab)));
+        const requestedTaskTab = new URLSearchParams(window.location.search).get('tab');
+        activateTaskTab(requestedTaskTab === 'completed' ? 'completed' : 'assigned');
+    }
+
     document.addEventListener('submit', (event) => {
         const form = event.target.closest('form[data-confirm]');
         if (form && !window.confirm(form.dataset.confirm || 'Bu işleme devam edilsin mi?')) event.preventDefault();
