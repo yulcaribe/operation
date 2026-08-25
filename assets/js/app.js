@@ -153,8 +153,11 @@
         const flightForm = document.querySelector('[data-timeline-flight-form]');
         const assignForm = document.querySelector('[data-timeline-assign-form]');
         const statusForm = document.querySelector('[data-timeline-status-form]');
-        const zoomLevels = [1.5, 2, 3, 4];
-        const zoomLabels = ['75%', '100%', '150%', '200%'];
+        const zoomFactors = [1, 1.35, 1.8, 2.4];
+        const zoomLabels = ['Sığdır', '100%', '150%', '200%'];
+        const zoomBarHeights = [34, 44, 56, 70];
+        const zoomLaneGaps = [3, 4, 5, 6];
+        const zoomProcessSlots = [17, 19, 21, 23];
         const stateLabels = { not_started: 'Başlamadı', started: 'Devam ediyor', finished: 'Tamamlandı', not_used: 'Kullanılmadı' };
         const stateMarks = { not_started: '○', started: '▶', finished: '✓', not_used: '╱' };
         const flightStatusLabels = { scheduled: 'Planlanan', active: 'Devam ediyor', completed: 'Tamamlanan', cancelled: 'İptal' };
@@ -170,7 +173,7 @@
             offblock: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 16h20M6 13l6-9 2 9M10 16l-3 5M15 16l3 5M17 7h5m-2-2 2 2-2 2"/></svg>',
             note: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5"/></svg>',
         };
-        let zoomIndex = 1;
+        let zoomIndex = 0;
         let currentData = null;
         let selectedFlightId = 0;
         let drawerDirty = false;
@@ -186,6 +189,7 @@
         };
         const labelWidth = () => (window.innerWidth <= 680 ? 142 : 190);
         const availableTimelineWidth = () => Math.max(180, scrollArea.clientWidth - labelWidth());
+        const minuteWidth = () => Math.max(.55, availableTimelineWidth() / 1440) * zoomFactors[zoomIndex];
         const compactDateTime = (value) => {
             if (!value) return '-';
             const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
@@ -342,12 +346,12 @@
                 return { flight, lane };
             });
         };
-        const appendCompactProcesses = (list, flight, barWidth) => {
+        const appendCompactProcesses = (list, flight, barWidth, slotWidth) => {
             const priority = { started: 0, not_started: 1, finished: 2, not_used: 3 };
             const ordered = (flight.processes || []).map((process, index) => ({ process, index }))
                 .sort((left, right) => (priority[left.process.state] ?? 4) - (priority[right.process.state] ?? 4) || left.index - right.index)
                 .map((item) => item.process);
-            const slots = Math.max(1, Math.floor(Math.max(22, barWidth - 8) / 23));
+            const slots = Math.max(1, Math.floor(Math.max(slotWidth, barWidth - 6) / slotWidth));
             const visibleCount = ordered.length > slots && slots > 1 ? slots - 1 : Math.min(ordered.length, slots);
             ordered.slice(0, visibleCount).forEach((process) => list.append(processIcon(process)));
             const hiddenCount = ordered.length - visibleCount;
@@ -367,17 +371,20 @@
 
         const renderTimeline = (data, scrollTarget = null) => {
             const previousScroll = scrollArea.scrollLeft;
-            const minuteWidth = zoomLevels[zoomIndex];
+            const currentMinuteWidth = minuteWidth();
             const axisWidth = labelWidth();
-            const timeWidth = 1440 * minuteWidth;
+            const timeWidth = 1440 * currentMinuteWidth;
             const canvasWidth = axisWidth + timeWidth;
-            const barHeight = 72;
-            const laneGap = 6;
+            const barHeight = zoomBarHeights[zoomIndex];
+            const laneGap = zoomLaneGaps[zoomIndex];
+            const rowPadding = 8;
             canvas.replaceChildren();
+            canvas.classList.remove('timeline-density-0', 'timeline-density-1', 'timeline-density-2', 'timeline-density-3');
+            canvas.classList.add(`timeline-density-${zoomIndex}`);
             canvas.style.width = `${canvasWidth}px`;
             canvas.style.setProperty('--timeline-axis-width', `${axisWidth}px`);
-            canvas.style.setProperty('--quarter-width', `${15 * minuteWidth}px`);
-            canvas.style.setProperty('--hour-width', `${60 * minuteWidth}px`);
+            canvas.style.setProperty('--quarter-width', `${15 * currentMinuteWidth}px`);
+            canvas.style.setProperty('--hour-width', `${60 * currentMinuteWidth}px`);
 
             const header = makeElement('div', 'timeline-board-header');
             header.append(makeElement('div', 'timeline-axis-title', 'Operasyon Memuru'));
@@ -386,7 +393,7 @@
             hours.style.width = `${timeWidth}px`;
             for (let hour = 0; hour < 24; hour += 1) {
                 const label = makeElement('span', 'timeline-hour-label', `${String(hour).padStart(2, '0')}:00`);
-                label.style.left = `${hour * 60 * minuteWidth}px`;
+                label.style.left = `${hour * 60 * currentMinuteWidth}px`;
                 hours.append(label);
             }
             header.append(hours);
@@ -395,10 +402,11 @@
             (data.rows || []).forEach((staffRow) => {
                 const laidOut = layoutLanes(staffRow.flights || []);
                 const laneCount = Math.max(1, ...laidOut.map((item) => item.lane + 1));
-                const rowHeight = 14 + (laneCount * barHeight) + ((laneCount - 1) * laneGap);
+                const rowHeight = rowPadding + (laneCount * barHeight) + ((laneCount - 1) * laneGap);
                 const row = makeElement('section', 'timeline-staff-row');
                 row.style.height = `${rowHeight}px`;
                 const staff = makeElement('div', 'timeline-staff-label');
+                staff.style.height = `${Math.min(rowHeight, barHeight + rowPadding)}px`;
                 staff.append(makeElement('strong', '', staffRow.assignee_name));
                 staff.append(makeElement('small', '', `${staffRow.flights.length} uçuş${laneCount > 1 ? ` · ${laneCount} şerit` : ''}`));
                 row.append(staff);
@@ -407,10 +415,10 @@
                 track.style.width = `${timeWidth}px`;
 
                 laidOut.forEach(({ flight, lane }) => {
-                    const width = Math.max(1, Number(flight.duration_minutes) * minuteWidth);
+                    const width = Math.max(1, Number(flight.duration_minutes) * currentMinuteWidth);
                     const bar = makeElement('div', `timeline-flight-bar status-${flight.status}`);
-                    bar.style.left = `${Number(flight.start_minute) * minuteWidth}px`;
-                    bar.style.top = `${7 + (lane * (barHeight + laneGap))}px`;
+                    bar.style.left = `${Number(flight.start_minute) * currentMinuteWidth}px`;
+                    bar.style.top = `${4 + (lane * (barHeight + laneGap))}px`;
                     bar.style.width = `${width}px`;
                     bar.style.height = `${barHeight}px`;
                     bar.tabIndex = 0;
@@ -433,7 +441,7 @@
                     meta.title = flightMeta(flight);
                     bar.append(meta);
                     const processList = makeElement('div', 'timeline-process-list');
-                    appendCompactProcesses(processList, flight, width);
+                    appendCompactProcesses(processList, flight, width, zoomProcessSlots[zoomIndex]);
                     bar.append(processList);
                     track.append(bar);
                 });
@@ -444,7 +452,7 @@
             if (!(data.rows || []).length) canvas.append(makeElement('div', 'timeline-board-empty', 'Seçili günde yetki kapsamınıza giren uçuş bulunmuyor.'));
             if (data.now_minute !== null && Number(data.now_minute) >= 0 && Number(data.now_minute) <= 1440) {
                 const nowLine = makeElement('div', 'timeline-now-line');
-                nowLine.style.left = `${axisWidth + (Number(data.now_minute) * minuteWidth)}px`;
+                nowLine.style.left = `${axisWidth + (Number(data.now_minute) * currentMinuteWidth)}px`;
                 nowLine.innerHTML = '<span>Şimdi</span>';
                 canvas.append(nowLine);
             }
@@ -454,7 +462,7 @@
             updatedLabel.textContent = `Son güncelleme ${compactDateTime(data.generated_at)}`;
             zoomLabel.textContent = zoomLabels[zoomIndex];
             zoomOut.disabled = zoomIndex === 0;
-            zoomIn.disabled = zoomIndex === zoomLevels.length - 1;
+            zoomIn.disabled = zoomIndex === zoomFactors.length - 1;
             nowButton.disabled = data.now_minute === null;
             if (selectedFlightId) {
                 const selected = findFlight(selectedFlightId);
@@ -462,7 +470,7 @@
             }
             requestAnimationFrame(() => {
                 scrollArea.scrollLeft = scrollTarget !== null
-                    ? Math.max(0, (scrollTarget * minuteWidth) - (availableTimelineWidth() / 2))
+                    ? Math.max(0, (scrollTarget * currentMinuteWidth) - (availableTimelineWidth() / 2))
                     : previousScroll;
             });
         };
@@ -500,13 +508,13 @@
             buttons.forEach((button) => { button.disabled = true; });
             try {
                 const response = await fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' });
-                const html = await response.text();
-                const page = new DOMParser().parseFromString(html, 'text/html');
-                const flash = page.querySelector('.flash');
-                if (!response.ok || (flash && flash.classList.contains('error'))) throw new Error(flash ? flash.textContent.trim() : 'İşlem tamamlanamadı.');
+                const contentType = response.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) throw new Error('Oturum veya timeline işlem bağlantısı yenilenmeli. Sayfayı bir kez yenileyin.');
+                const result = await response.json();
+                if (!response.ok || !result.ok) throw new Error(result.error || 'İşlem tamamlanamadı.');
                 drawerDirty = false;
                 await loadTimeline(true);
-                showDrawerFeedback(flash ? flash.textContent.trim() : 'Değişiklik kaydedildi.');
+                showDrawerFeedback(result.message || 'Değişiklik kaydedildi.');
             } catch (error) {
                 showDrawerFeedback(error instanceof Error ? error.message : 'İşlem tamamlanamadı.', true);
             } finally {
@@ -515,9 +523,9 @@
         };
         const changeZoom = (direction) => {
             if (!currentData) return;
-            const oldWidth = zoomLevels[zoomIndex];
+            const oldWidth = minuteWidth();
             const centerMinute = (scrollArea.scrollLeft + (availableTimelineWidth() / 2)) / oldWidth;
-            zoomIndex = Math.max(0, Math.min(zoomLevels.length - 1, zoomIndex + direction));
+            zoomIndex = Math.max(0, Math.min(zoomFactors.length - 1, zoomIndex + direction));
             renderTimeline(currentData, centerMinute);
         };
         const setFocusMode = (enabled) => {
@@ -536,15 +544,15 @@
         zoomIn.addEventListener('click', () => changeZoom(1));
         refreshButton.addEventListener('click', () => loadTimeline(true));
         focusButton.addEventListener('click', () => {
-            const minuteWidth = zoomLevels[zoomIndex];
-            const centerMinute = currentData ? (scrollArea.scrollLeft + (availableTimelineWidth() / 2)) / minuteWidth : null;
+            const currentMinuteWidth = minuteWidth();
+            const centerMinute = currentData ? (scrollArea.scrollLeft + (availableTimelineWidth() / 2)) / currentMinuteWidth : null;
             setFocusMode(!document.body.classList.contains('timeline-focus-mode'));
             if (currentData) requestAnimationFrame(() => renderTimeline(currentData, centerMinute));
         });
         nowButton.addEventListener('click', () => {
             if (!currentData || currentData.now_minute === null) return;
-            const minuteWidth = zoomLevels[zoomIndex];
-            scrollArea.scrollTo({ left: Math.max(0, (Number(currentData.now_minute) * minuteWidth) - (availableTimelineWidth() / 2)), behavior: 'smooth' });
+            const currentMinuteWidth = minuteWidth();
+            scrollArea.scrollTo({ left: Math.max(0, (Number(currentData.now_minute) * currentMinuteWidth) - (availableTimelineWidth() / 2)), behavior: 'smooth' });
         });
         document.addEventListener('click', (event) => {
             if (event.target.closest('.timeline-process, .timeline-process-more')) return;

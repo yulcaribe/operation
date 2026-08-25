@@ -44,6 +44,10 @@ try {
         render_timeline_data($user);
         exit;
     }
+    if ($path === '/timeline/action') {
+        render_timeline_action($user);
+        exit;
+    }
     if (is_post()) handle_action($user, $path);
     render_page($user, $path, $flash);
 } catch (Throwable $error) {
@@ -218,6 +222,34 @@ function render_timeline_data(array $user): void
     );
 }
 
+function render_timeline_action(array $user): void
+{
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, max-age=0');
+    try {
+        if (!is_post()) throw new RuntimeException('Yalnızca POST isteği kabul edilir.');
+        verify_csrf();
+        $action = (string)($_POST['action'] ?? '');
+        switch ($action) {
+            case 'save_timeline_flight':
+                FlightService::save($user, $_POST);
+                break;
+            case 'assign_timeline_flight':
+                FlightService::assign($user, (int)($_POST['flight_id'] ?? 0), (int)($_POST['user_id'] ?? 0));
+                break;
+            case 'change_timeline_flight_status':
+                FlightService::changeStatusByAdmin($user, (int)($_POST['flight_id'] ?? 0), (string)($_POST['target_status'] ?? ''));
+                break;
+            default:
+                throw new RuntimeException('Timeline işlemi bulunamadı.');
+        }
+        echo json_encode(['ok' => true, 'message' => 'İşlem başarıyla tamamlandı.'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    } catch (Throwable $error) {
+        http_response_code(422);
+        echo json_encode(['ok' => false, 'error' => friendly_error($error)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+}
+
 function render_login(?array $flash): void
 {
     render_auth_start('Giriş');
@@ -382,7 +414,7 @@ function render_timeline(array $actor): void
             <button type="button" class="btn btn-ghost btn-small" data-timeline-focus aria-pressed="false">⛶ Tam Ekran</button>
             <span class="timeline-zoom-controls" aria-label="Yakınlaştırma">
                 <button type="button" class="btn btn-small" data-timeline-zoom-out aria-label="Uzaklaştır">−</button>
-                <span data-timeline-zoom-label>100%</span>
+                <span data-timeline-zoom-label>Sığdır</span>
                 <button type="button" class="btn btn-small" data-timeline-zoom-in aria-label="Yakınlaştır">+</button>
             </span>
             <span class="timeline-updated" data-timeline-updated aria-live="polite">Hazırlanıyor…</span>
@@ -405,7 +437,7 @@ function render_timeline(array $actor): void
             <header class="timeline-drawer-header"><div><p class="eyebrow">Canlı uçuş</p><h2 data-timeline-drawer-title>Uçuş detayı</h2><p class="muted" data-timeline-drawer-meta></p></div><button type="button" class="btn btn-small" data-timeline-drawer-close aria-label="Kapat">✕</button></header>
             <div class="timeline-drawer-feedback" data-timeline-drawer-feedback hidden></div>
             <section class="timeline-drawer-section"><h3>Operasyon süreçleri</h3><div class="timeline-drawer-processes" data-timeline-drawer-processes></div></section>
-            <form method="post" action="<?= e(url_for('/timeline')) ?>" class="timeline-drawer-form" data-timeline-flight-form>
+            <form method="post" action="<?= e(url_for('/timeline/action')) ?>" class="timeline-drawer-form" data-timeline-flight-form>
                 <input type="hidden" name="action" value="save_timeline_flight"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><input type="hidden" name="airline_id"><input type="hidden" name="status"><?= csrf_field() ?>
                 <div class="timeline-drawer-grid">
                     <label>Uçuş tipi<select name="flight_type_id" required><?php options_rows($flightTypes, 0, 'name'); ?></select></label>
@@ -422,7 +454,7 @@ function render_timeline(array $actor): void
                 <button class="btn btn-primary" data-timeline-flight-save>Uçuş Bilgilerini Kaydet</button>
             </form>
             <?php if ($timelineUsers): ?>
-                <form method="post" action="<?= e(url_for('/timeline')) ?>" class="timeline-drawer-assign" data-timeline-assign-form>
+                <form method="post" action="<?= e(url_for('/timeline/action')) ?>" class="timeline-drawer-assign" data-timeline-assign-form>
                     <input type="hidden" name="action" value="assign_timeline_flight"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><?= csrf_field() ?>
                     <label>Operasyon memuru<select name="user_id"><option value="0">Atanmamış</option><?php foreach ($timelineUsers as $timelineUser): ?><option value="<?= (int)$timelineUser['id'] ?>"><?= e(trim($timelineUser['first_name'] . ' ' . $timelineUser['last_name']) . ' · ' . $timelineUser['username']) ?></option><?php endforeach; ?></select></label>
                     <button class="btn btn-success">Atamayı Kaydet</button>
@@ -430,7 +462,7 @@ function render_timeline(array $actor): void
                 </form>
             <?php endif; ?>
             <?php if ($canManage): ?>
-                <form method="post" action="<?= e(url_for('/timeline')) ?>" class="timeline-drawer-status" data-timeline-status-form data-confirm="Uçuş durumu değiştirilecek; süreç kayıtları korunacak. Devam edilsin mi?" hidden>
+                <form method="post" action="<?= e(url_for('/timeline/action')) ?>" class="timeline-drawer-status" data-timeline-status-form data-confirm="Uçuş durumu değiştirilecek; süreç kayıtları korunacak. Devam edilsin mi?" hidden>
                     <input type="hidden" name="action" value="change_timeline_flight_status"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="flight_id"><?= csrf_field() ?>
                     <label>Uçuş durumu<select name="target_status" required></select></label>
                     <button class="btn btn-warning">Durumu Değiştir</button>
