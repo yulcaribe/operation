@@ -134,8 +134,11 @@ final class Authorization
         if ($row['scope_type'] === 'airline') return (int)($resource['airline_id'] ?? 0) > 0 && (int)$row['airline_id'] === (int)$resource['airline_id'];
         if ($row['scope_type'] === 'assigned') {
             return !empty($resource['flight_id']) && (bool)DB::fetch(
-                'SELECT 1 FROM flight_assignments WHERE flight_id = ? AND user_id = ? AND status IN ("active", "completed") LIMIT 1',
-                [(int)$resource['flight_id'], $userId]
+                'SELECT 1 FROM flight_assignments
+                 WHERE flight_id = ? AND user_id = ? AND status IN ("active", "completed")
+                   AND id = (SELECT MAX(latest.id) FROM flight_assignments latest WHERE latest.flight_id = ? AND latest.status IN ("active", "completed"))
+                 LIMIT 1',
+                [(int)$resource['flight_id'], $userId, (int)$resource['flight_id']]
             );
         }
         return false;

@@ -99,6 +99,11 @@ legend { padding: 0 .35rem; color: #38445a; font-size: .85rem; font-weight: 800;
 .check-label input, .assignment-card input, .permission-table input { width: 18px; height: 18px; flex: none; accent-color: var(--primary); }
 .assignment-grid { margin-bottom: 1rem; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7rem; }
 .assignment-card { padding: .8rem; border: 1px solid var(--line); border-radius: 9px; }
+.assignment-card:has(input:checked) { border-color: var(--primary); background: #eef3ff; }
+.flight-leg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.flight-leg h2 { margin-bottom: .3rem; }
+.flight-leg p { margin: 0 0 .4rem; }
+.operation-start { border-color: #9ed8bd; }
 .inline-form { display: flex; align-items: end; gap: .5rem; }
 .reset-form { margin-top: .8rem; }
 
@@ -110,6 +115,7 @@ legend { padding: 0 .35rem; color: #38445a; font-size: .85rem; font-weight: 800;
 .table-wrap { overflow-x: auto; }
 .table-wrap.panel { padding: 0; }
 table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.flight-table { min-width: 1320px; }
 th, td { padding: .78rem .9rem; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--line); }
 th { color: #667186; background: #f7f9fc; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; }
 tr:last-child td { border-bottom: 0; }
@@ -183,7 +189,7 @@ td input, td select, td textarea { min-width: 100px; }
 @media (max-width: 680px) {
     .topbar { min-height: 76px; }
     .content { padding-bottom: 2rem; }
-    .cards-4, .role-grid, .process-grid, .form-grid, .assignment-grid { grid-template-columns: 1fr; }
+    .cards-4, .role-grid, .process-grid, .form-grid, .assignment-grid, .flight-leg-grid { grid-template-columns: 1fr; }
     .form-grid > .full, .form-grid > fieldset.full { grid-column: auto; }
     .section-heading, .welcome-card, .commit-bar { align-items: stretch; flex-direction: column; }
     .permission-table > div { grid-template-columns: minmax(0, 1fr) 55px 55px; }

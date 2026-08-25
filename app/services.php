@@ -199,15 +199,16 @@ final class FlightService
     public static function allVisible(array $actor, array $filters = [], string $permission = 'flights.view'): array
     {
         $params = [];
-        $where = ['f.deleted_at IS NULL'];
-        if (!empty($filters['status']) && in_array($filters['status'], ['scheduled', 'active', 'completed', 'cancelled', 'archived'], true)) {
+        $where = ['f.deleted_at IS NULL', 'f.status != "archived"'];
+        if (!empty($filters['status']) && in_array($filters['status'], ['scheduled', 'active', 'completed', 'cancelled'], true)) {
             $where[] = 'f.status = ?'; $params[] = $filters['status'];
         }
         $rows = DB::fetchAll(
             'SELECT f.*, a.name AS airline_name, a.icao_code, a.iata_code, ft.name AS flight_type_name,
-                    (SELECT GROUP_CONCAT(DISTINCT CONCAT(u.first_name, " ", u.last_name) SEPARATOR ", ")
+                    (SELECT CONCAT(u.first_name, " ", u.last_name)
                      FROM flight_assignments fa JOIN users u ON u.id = fa.user_id
-                     WHERE fa.flight_id = f.id AND fa.status IN ("active", "completed")) AS assignees
+                     WHERE fa.flight_id = f.id AND fa.status IN ("active", "completed")
+                     ORDER BY fa.assigned_at DESC LIMIT 1) AS assignee_name
              FROM flights f JOIN airlines a ON a.id = f.airline_id JOIN flight_types ft ON ft.id = f.flight_type_id
              WHERE ' . implode(' AND ', $where) . ' ORDER BY COALESCE(f.scheduled_departure_at, f.scheduled_arrival_at) DESC',
             $params
@@ -232,10 +233,14 @@ final class FlightService
         $payload = self::normalize($data);
         $errors = self::validate($payload);
         if ($errors) throw new RuntimeException(implode(' ', $errors));
+        if (!$existing && $payload['status'] !== 'scheduled') throw new RuntimeException('Yeni uçuş planlanan durumda oluşturulmalıdır.');
+        if ($existing && $payload['status'] === 'active' && $existing['status'] !== 'active') {
+            throw new RuntimeException('Uçuş yalnızca atanan sorumlu tarafından operasyon ekranından başlatılabilir.');
+        }
         if ($payload['status'] === 'completed' && (!$existing || $existing['status'] !== 'completed')) {
             throw new RuntimeException('Uçuş yalnızca operasyon ekranındaki tamamlama işlemiyle tamamlanabilir.');
         }
-        if ($existing && $payload['status'] !== $existing['status'] && in_array($payload['status'], ['cancelled', 'archived'], true)) {
+        if ($existing && $payload['status'] !== $existing['status'] && $payload['status'] === 'cancelled') {
             Authorization::require($actor, 'flights.cancel', self::context($existing));
         }
         if ($existing && $existing['status'] === 'completed' && $payload['status'] !== 'completed') {
@@ -263,39 +268,42 @@ final class FlightService
 
     public static function assignments(int $flightId): array
     {
-        return DB::fetchAll('SELECT user_id FROM flight_assignments WHERE flight_id = ? AND status = "active"', [$flightId]);
+        return DB::fetchAll('SELECT user_id FROM flight_assignments WHERE flight_id = ? AND status = "active" ORDER BY assigned_at DESC, id DESC LIMIT 1', [$flightId]);
     }
 
-    public static function assign(array $actor, int $flightId, array $userIds): void
+    public static function isAssignedTo(int $flightId, int $userId): bool
+    {
+        return (bool)DB::fetch(
+            'SELECT 1 FROM flight_assignments
+             WHERE flight_id = ? AND user_id = ? AND status = "active"
+               AND id = (SELECT MAX(latest.id) FROM flight_assignments latest WHERE latest.flight_id = ? AND latest.status = "active")
+             LIMIT 1',
+            [$flightId, $userId, $flightId]
+        );
+    }
+
+    public static function assign(array $actor, int $flightId, int $userId): void
     {
         $flight = self::find($flightId);
         if (!$flight) throw new RuntimeException('Uçuş bulunamadı.');
         Authorization::require($actor, 'flights.assign', self::context($flight));
-        $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds))));
+        if (in_array($flight['status'], ['completed', 'cancelled'], true)) throw new RuntimeException('Tamamlanmış veya iptal edilmiş uçuş yeniden atanamaz.');
+        if ($userId > 0 && !DB::fetch('SELECT id FROM users WHERE id = ? AND status = "active" AND deleted_at IS NULL', [$userId])) {
+            throw new RuntimeException('Atanacak aktif kullanıcı bulunamadı.');
+        }
         DB::begin();
         try {
-            DB::execute('UPDATE flight_assignments SET status = "revoked", unassigned_at = NOW() WHERE flight_id = ? AND status = "active"', [$flightId]);
-            foreach ($userIds as $userId) {
-                if (!DB::fetch('SELECT id FROM users WHERE id = ? AND status = "active" AND deleted_at IS NULL', [$userId])) continue;
+            DB::execute('DELETE FROM flight_assignments WHERE flight_id = ?', [$flightId]);
+            if ($userId > 0) {
                 DB::execute(
                     'INSERT INTO flight_assignments (flight_id, user_id, assignment_role, status, assigned_by, assigned_at, unassigned_at)
-                     VALUES (?, ?, "primary", "active", ?, NOW(), NULL)
-                     ON DUPLICATE KEY UPDATE status = "active", assigned_by = VALUES(assigned_by), assigned_at = NOW(), unassigned_at = NULL',
+                     VALUES (?, ?, "primary", "active", ?, NOW(), NULL)',
                     [$flightId, $userId, (int)$actor['id']]
                 );
             }
-            Audit::record((int)$actor['id'], 'flight.assigned', 'flight', $flightId, ['user_ids' => $userIds]);
+            Audit::record((int)$actor['id'], 'flight.assigned', 'flight', $flightId, ['user_id' => $userId ?: null]);
             DB::commit();
         } catch (Throwable $error) { DB::rollback(); throw $error; }
-    }
-
-    public static function archive(array $actor, int $flightId): void
-    {
-        $flight = self::find($flightId);
-        if (!$flight) throw new RuntimeException('Uçuş bulunamadı.');
-        Authorization::require($actor, 'flights.cancel', self::context($flight));
-        DB::execute('UPDATE flights SET status = "archived", updated_by = ? WHERE id = ?', [(int)$actor['id'], $flightId]);
-        Audit::record((int)$actor['id'], 'flight.archived', 'flight', $flightId);
     }
 
     public static function delete(array $actor, int $flightId): void
@@ -305,9 +313,12 @@ final class FlightService
         Authorization::require($actor, 'flights.delete', self::context($flight));
         DB::begin();
         try {
-            DB::execute('UPDATE flights SET deleted_at = NOW(), source_key = NULL, updated_by = ? WHERE id = ?', [(int)$actor['id'], $flightId]);
-            DB::execute('UPDATE flight_assignments SET status = "revoked", unassigned_at = NOW() WHERE flight_id = ? AND status = "active"', [$flightId]);
-            Audit::record((int)$actor['id'], 'flight.deleted', 'flight', $flightId, ['soft_delete' => true]);
+            DB::execute('DELETE FROM flights WHERE id = ?', [$flightId]);
+            Audit::record((int)$actor['id'], 'flight.deleted', 'flight', $flightId, [
+                'icao' => $flight['icao_code'],
+                'arrival' => $flight['arrival_flight_number'],
+                'departure' => $flight['departure_flight_number'],
+            ]);
             DB::commit();
         } catch (Throwable $error) {
             DB::rollback();
@@ -315,12 +326,29 @@ final class FlightService
         }
     }
 
+    public static function start(array $actor, int $flightId): void
+    {
+        $flight = self::find($flightId);
+        if (!$flight) throw new RuntimeException('Başlatılacak uçuş bulunamadı.');
+        Authorization::require($actor, 'flights.complete', self::context($flight));
+        if (!self::isAssignedTo($flightId, (int)$actor['id'])) throw new RuntimeException('Bu uçuş size atanmamış.');
+        if ($flight['status'] !== 'scheduled') throw new RuntimeException('Yalnızca planlanan uçuş başlatılabilir.');
+        DB::begin();
+        try {
+            $changed = DB::execute('UPDATE flights SET status = "active", updated_by = ? WHERE id = ? AND status = "scheduled"', [(int)$actor['id'], $flightId]);
+            if ($changed !== 1) throw new RuntimeException('Uçuş başka bir işlem tarafından başlatılmış veya değiştirilmiş.');
+            Audit::record((int)$actor['id'], 'flight.started', 'flight', $flightId);
+            DB::commit();
+        } catch (Throwable $error) { DB::rollback(); throw $error; }
+    }
+
     public static function complete(array $actor, int $flightId): void
     {
         $flight = self::find($flightId);
-        if (!$flight) throw new RuntimeException('Uçuş bulunamadı.');
+        if (!$flight) throw new RuntimeException('Tamamlanacak uçuş bulunamadı.');
         Authorization::require($actor, 'flights.complete', self::context($flight));
-        if (in_array($flight['status'], ['completed', 'cancelled', 'archived'], true)) throw new RuntimeException('Bu durumdaki uçuş tamamlanamaz.');
+        if (!self::isAssignedTo($flightId, (int)$actor['id'])) throw new RuntimeException('Bu uçuş size atanmamış.');
+        if ($flight['status'] !== 'active') throw new RuntimeException('Uçuş tamamlanmadan önce operasyon başlatılmalıdır.');
         $missing = DB::fetchAll(
             'SELECT pt.name FROM flight_type_process_map m
              JOIN process_types pt ON pt.id = m.process_type_id
@@ -332,9 +360,14 @@ final class FlightService
             [$flightId, (int)$flight['flight_type_id']]
         );
         if ($missing) throw new RuntimeException('Zorunlu süreçler tamamlanmadı: ' . implode(', ', array_column($missing, 'name')));
-        DB::execute('UPDATE flights SET status = "completed", updated_by = ? WHERE id = ?', [(int)$actor['id'], $flightId]);
-        DB::execute('UPDATE flight_assignments SET status = "completed" WHERE flight_id = ? AND status = "active"', [$flightId]);
-        Audit::record((int)$actor['id'], 'flight.completed', 'flight', $flightId);
+        DB::begin();
+        try {
+            $changed = DB::execute('UPDATE flights SET status = "completed", updated_by = ? WHERE id = ? AND status = "active"', [(int)$actor['id'], $flightId]);
+            if ($changed !== 1) throw new RuntimeException('Uçuş başka bir işlem tarafından tamamlanmış veya değiştirilmiş.');
+            DB::execute('UPDATE flight_assignments SET status = "completed" WHERE flight_id = ? AND user_id = ? AND status = "active"', [$flightId, (int)$actor['id']]);
+            Audit::record((int)$actor['id'], 'flight.completed', 'flight', $flightId);
+            DB::commit();
+        } catch (Throwable $error) { DB::rollback(); throw $error; }
     }
 
     public static function context(array $flight): array
@@ -364,7 +397,7 @@ final class FlightService
         if ((int)$data['flight_type_id'] <= 0 || ($checkReferences && !DB::fetch('SELECT id FROM flight_types WHERE id = ? AND status = "active"', [(int)$data['flight_type_id']]))) $errors[] = 'Geçerli uçuş tipi seçilmelidir.';
         if (!$data['arrival_flight_number'] && !$data['departure_flight_number']) $errors[] = 'En az bir uçuş numarası gerekir.';
         if (!$data['scheduled_arrival_at'] && !$data['scheduled_departure_at']) $errors[] = 'En az bir planlanan zaman gerekir.';
-        if (!in_array($data['status'], ['scheduled', 'active', 'completed', 'cancelled', 'archived'], true)) $errors[] = 'Uçuş durumu geçersiz.';
+        if (!in_array($data['status'], ['scheduled', 'active', 'completed', 'cancelled'], true)) $errors[] = 'Uçuş durumu geçersiz.';
         return $errors;
     }
 
@@ -405,6 +438,10 @@ final class ProcessService
         if (!$flight) throw new RuntimeException('Uçuş bulunamadı.');
         $permission = $action === 'reset' ? 'processes.override' : 'processes.update';
         Authorization::require($actor, $permission, FlightService::context($flight));
+        if ($action !== 'reset') {
+            if ($flight['status'] !== 'active') throw new RuntimeException('Önce uçuş operasyonunu başlatın.');
+            if (!FlightService::isAssignedTo($flightId, (int)$actor['id'])) throw new RuntimeException('Bu uçuş size atanmamış.');
+        }
         $mapped = DB::fetch('SELECT pt.input_type FROM flight_type_process_map m JOIN process_types pt ON pt.id = m.process_type_id WHERE m.flight_type_id = ? AND m.process_type_id = ?', [(int)$flight['flight_type_id'], $processTypeId]);
         if (!$mapped) throw new RuntimeException('Süreç bu uçuş tipine ait değil.');
         $allowedActions = [
@@ -452,17 +489,28 @@ final class ImportService
     private static ?array $airlinesByIcao = null;
     private static ?array $flightTypesByCode = null;
 
-    public static function batches(): array
+    public static function cleanupTransient(): void
     {
-        return DB::fetchAll(
-            'SELECT b.*, CONCAT(u.first_name, " ", u.last_name) AS imported_by_name
-             FROM flight_import_batches b LEFT JOIN users u ON u.id = b.imported_by ORDER BY b.id DESC LIMIT 100'
+        DB::execute(
+            'DELETE FROM flight_import_batches
+             WHERE status IN ("completed", "completed_with_errors", "failed")
+                OR (status = "preview" AND created_at < DATE_SUB(NOW(), INTERVAL 2 HOUR))'
         );
     }
 
     public static function batch(int $batchId): ?array
     {
         return DB::fetch('SELECT * FROM flight_import_batches WHERE id = ?', [$batchId]);
+    }
+
+    public static function batchForActor(array $actor, int $batchId, string $permission = 'imports.view'): ?array
+    {
+        $batch = self::batch($batchId);
+        if (!$batch) return null;
+        if ((int)$batch['imported_by'] !== (int)$actor['id'] && !Authorization::isGlobal($actor, $permission)) {
+            throw new RuntimeException('Bu geçici Excel önizlemesine erişim yetkiniz yok.');
+        }
+        return $batch;
     }
 
     public static function rows(int $batchId): array
@@ -482,6 +530,7 @@ final class ImportService
     public static function stage(array $actor, array $file): int
     {
         Authorization::require($actor, 'imports.stage');
+        self::cleanupTransient();
         if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || empty($file['tmp_name'])) throw new RuntimeException('Excel dosyası yüklenemedi.');
         if ((int)($file['size'] ?? 0) > 10 * 1024 * 1024) throw new RuntimeException('Dosya 10 MB sınırını aşıyor.');
         $name = basename((string)($file['name'] ?? 'import.xlsx'));
@@ -531,6 +580,7 @@ final class ImportService
 
         DB::begin();
         try {
+            DB::execute('DELETE FROM flight_import_batches WHERE imported_by = ? AND status = "preview"', [(int)$actor['id']]);
             $batchId = DB::insert(
                 'INSERT INTO flight_import_batches (file_name, file_hash, status, total_rows, success_rows, imported_by) VALUES (?, ?, "preview", ?, ?, ?)',
                 [$name, $hash, count($importRows), 0, (int)$actor['id']]
@@ -550,10 +600,23 @@ final class ImportService
         } catch (Throwable $error) { DB::rollback(); throw $error; }
     }
 
+    public static function discard(array $actor, int $batchId): void
+    {
+        Authorization::require($actor, 'imports.stage');
+        $batch = self::batchForActor($actor, $batchId, 'imports.stage');
+        if (!$batch || $batch['status'] !== 'preview') throw new RuntimeException('Silinecek Excel önizlemesi bulunamadı.');
+        DB::begin();
+        try {
+            DB::execute('DELETE FROM flight_import_batches WHERE id = ?', [$batchId]);
+            Audit::record((int)$actor['id'], 'import.discarded', 'flight_import_batch', $batchId);
+            DB::commit();
+        } catch (Throwable $error) { DB::rollback(); throw $error; }
+    }
+
     public static function updateRows(array $actor, int $batchId, array $rows): void
     {
         Authorization::require($actor, 'imports.stage');
-        $batch = self::batch($batchId);
+        $batch = self::batchForActor($actor, $batchId, 'imports.stage');
         if (!$batch || $batch['status'] !== 'preview') throw new RuntimeException('Bu import artık düzenlenemez.');
         DB::begin();
         try {
@@ -575,7 +638,7 @@ final class ImportService
     public static function deleteRows(array $actor, int $batchId, array $rowIds): void
     {
         Authorization::require($actor, 'imports.stage');
-        $batch = self::batch($batchId);
+        $batch = self::batchForActor($actor, $batchId, 'imports.stage');
         if (!$batch || $batch['status'] !== 'preview') throw new RuntimeException('Bu importtan artık satır silinemez.');
         $rowIds = array_values(array_unique(array_filter(array_map('intval', $rowIds), static fn(int $id): bool => $id > 0)));
         if (!$rowIds) throw new RuntimeException('Silinecek uçuş seçilmedi.');
@@ -598,7 +661,6 @@ final class ImportService
             self::revalidateDuplicateStatuses($batchId);
             Audit::record((int)$actor['id'], 'import.rows_deleted', 'flight_import_batch', $batchId, [
                 'deleted_count' => count($rowIds),
-                'row_ids' => $rowIds,
             ]);
             DB::commit();
         } catch (Throwable $error) { DB::rollback(); throw $error; }
@@ -607,7 +669,7 @@ final class ImportService
     public static function commit(array $actor, int $batchId): void
     {
         Authorization::require($actor, 'imports.commit');
-        $batch = self::batch($batchId);
+        $batch = self::batchForActor($actor, $batchId, 'imports.commit');
         if (!$batch || $batch['status'] !== 'preview') throw new RuntimeException('Import onay beklemiyor veya zaten işlendi.');
         self::revalidateDuplicateStatuses($batchId);
         $rows = self::rows($batchId);
@@ -638,11 +700,8 @@ final class ImportService
                 DB::execute('UPDATE flight_import_rows SET status = "imported", flight_id = ? WHERE id = ?', [$flightId, (int)$row['id']]);
                 $success++;
             }
-            DB::execute(
-                'UPDATE flight_import_batches SET status = ?, success_rows = ?, failed_rows = ?, completed_at = NOW() WHERE id = ?',
-                [$failed > 0 ? 'completed_with_errors' : 'completed', $success, $failed, $batchId]
-            );
             Audit::record((int)$actor['id'], 'import.committed', 'flight_import_batch', $batchId, ['success' => $success, 'skipped' => $failed]);
+            DB::execute('DELETE FROM flight_import_batches WHERE id = ?', [$batchId]);
             DB::commit();
         } catch (Throwable $error) { DB::rollback(); throw $error; }
     }
