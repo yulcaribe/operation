@@ -16,10 +16,68 @@
         });
     }
 
-    document.querySelectorAll('[data-confirm]').forEach((form) => {
-        form.addEventListener('submit', (event) => {
-            if (!window.confirm(form.dataset.confirm || 'Bu işleme devam edilsin mi?')) event.preventDefault();
+    document.addEventListener('submit', (event) => {
+        const form = event.target.closest('form[data-confirm]');
+        if (form && !window.confirm(form.dataset.confirm || 'Bu işleme devam edilsin mi?')) event.preventDefault();
+    });
+
+    document.addEventListener('submit', async (event) => {
+        const form = event.target.closest('form[data-process-form]');
+        if (!form || event.defaultPrevented) return;
+        event.preventDefault();
+
+        const formData = new FormData(form);
+        const processId = String(formData.get('process_type_id') || '');
+        const currentCard = form.closest('[data-process-id]');
+        const buttons = Array.from(form.querySelectorAll('button'));
+        buttons.forEach((button) => {
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
         });
+
+        const showFeedback = (message, isError = false) => {
+            const grid = document.querySelector('.process-grid');
+            if (!grid) return;
+            let feedback = document.querySelector('[data-process-feedback]');
+            if (!feedback) {
+                feedback = document.createElement('section');
+                feedback.dataset.processFeedback = '';
+                grid.before(feedback);
+            }
+            feedback.className = isError ? 'panel danger-zone text-danger' : 'panel notice';
+            feedback.textContent = message;
+        };
+
+        try {
+            const response = await fetch(form.getAttribute('action') || window.location.href, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const html = await response.text();
+            const page = new DOMParser().parseFromString(html, 'text/html');
+            const flash = page.querySelector('.flash');
+            const isError = !response.ok || Boolean(flash && flash.classList.contains('error'));
+
+            if (isError) {
+                showFeedback(flash ? flash.textContent.trim() : 'Süreç güncellenemedi.', true);
+                return;
+            }
+
+            const nextCard = Array.from(page.querySelectorAll('[data-process-id]'))
+                .find((card) => card.dataset.processId === processId);
+            if (!currentCard || !nextCard) throw new Error('Güncel süreç kartı alınamadı.');
+            currentCard.replaceWith(nextCard);
+            showFeedback(flash ? flash.textContent.trim() : 'Süreç güncellendi.');
+        } catch (error) {
+            showFeedback('Süreç güncellenemedi; bağlantıyı kontrol edip tekrar deneyin.', true);
+        } finally {
+            buttons.forEach((button) => {
+                button.disabled = false;
+                button.removeAttribute('aria-busy');
+            });
+        }
     });
 
     document.querySelectorAll('.permission-table > div').forEach((row) => {

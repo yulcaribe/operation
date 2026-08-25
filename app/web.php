@@ -92,15 +92,17 @@ function handle_action(array $user, string $path): never
                 break;
             case 'start_flight':
                 $flightId = (int)($_POST['flight_id'] ?? $_GET['id'] ?? 0);
-                FlightService::start($user, $flightId);
                 $redirect = '/flight?id=' . $flightId;
+                FlightService::start($user, $flightId);
                 break;
             case 'save_process':
+                $flightId = (int)($_POST['flight_id'] ?? $_GET['id'] ?? 0);
+                $redirect = '/flight?id=' . $flightId;
                 ProcessService::save($user, $_POST);
-                $redirect = '/flight?id=' . (int)($_POST['flight_id'] ?? 0);
                 break;
             case 'complete_flight':
                 $flightId = (int)($_POST['flight_id'] ?? $_GET['id'] ?? 0);
+                $redirect = '/flight?id=' . $flightId;
                 FlightService::complete($user, $flightId);
                 $redirect = '/flights';
                 break;
@@ -299,7 +301,7 @@ function render_flights(array $actor): void
 
 function render_flight_table(array $flights, array $actor): void
 {
-    ?><section class="panel table-wrap"><table class="flight-table"><thead><tr><th>ICAO</th><th>Arrival sefer</th><th>Arrival rota</th><th>Departure sefer</th><th>Departure rota</th><th>STA / STD</th><th>Tip</th><th>Uçak / Park</th><th>Sorumlu</th><th>Durum</th><th></th></tr></thead><tbody><?php foreach ($flights as $flight): $context=FlightService::context($flight); ?><tr><td><strong><?= e($flight['icao_code']) ?></strong><small><?= e($flight['airline_name']) ?></small></td><td><strong><?= e($flight['arrival_flight_number'] ?: '-') ?></strong></td><td><?= e(($flight['arrival_origin'] ?: '-') . ' → ' . ($flight['arrival_destination'] ?: '-')) ?></td><td><strong><?= e($flight['departure_flight_number'] ?: '-') ?></strong></td><td><?= e(($flight['departure_origin'] ?: '-') . ' → ' . ($flight['departure_destination'] ?: '-')) ?></td><td><?= e($flight['scheduled_arrival_at'] ? date('d.m H:i', strtotime($flight['scheduled_arrival_at'])) : '-') ?><small><?= e($flight['scheduled_departure_at'] ? date('d.m H:i', strtotime($flight['scheduled_departure_at'])) : '-') ?></small></td><td><?= e($flight['flight_type_name']) ?></td><td><?= e($flight['tail_number'] ?: '-') ?><small>Park <?= e($flight['stand'] ?: '-') ?></small></td><td><?= e($flight['assignee_name'] ?: 'Atanmamış') ?></td><td><span class="badge <?= e($flight['status']) ?>"><?= e(flight_status_label($flight['status'])) ?></span></td><td class="actions"><a class="btn btn-small" href="<?= e(url_for('/flight').'?id='.(int)$flight['id']) ?>">Aç</a><?php if (can($actor,'flights.update',$context)): ?><a class="btn btn-small" href="<?= e(url_for('/flights/edit').'?id='.(int)$flight['id']) ?>">Düzenle</a><?php endif; ?><?php if (can($actor,'flights.assign',$context)): ?><a class="btn btn-small" href="<?= e(url_for('/flights/assign').'?id='.(int)$flight['id']) ?>">Ata</a><?php endif; ?></td></tr><?php endforeach; ?><?php if(!$flights):?><tr><td colspan="11" class="empty">Uçuş bulunmuyor.</td></tr><?php endif;?></tbody></table></section><?php
+    ?><section class="panel table-wrap"><table class="flight-table"><thead><tr><th>ICAO</th><th>Arrival sefer</th><th>G1 Arrival</th><th>Departure sefer</th><th>G1 Departure</th><th>STA / STD</th><th>Tip</th><th>Uçak / Park</th><th>Sorumlu</th><th>Durum</th><th></th></tr></thead><tbody><?php foreach ($flights as $flight): $context=FlightService::context($flight); ?><tr><td><strong><?= e($flight['icao_code']) ?></strong><small><?= e($flight['airline_name']) ?></small></td><td><strong><?= e($flight['arrival_flight_number'] ?: '-') ?></strong></td><td><strong><?= e($flight['arrival_origin'] ?: '-') ?></strong></td><td><strong><?= e($flight['departure_flight_number'] ?: '-') ?></strong></td><td><strong><?= e($flight['departure_destination'] ?: '-') ?></strong></td><td><strong>STA <?= e($flight['scheduled_arrival_at'] ? date('d.m H:i', strtotime($flight['scheduled_arrival_at'])) : '-') ?></strong><small>STD <?= e($flight['scheduled_departure_at'] ? date('d.m H:i', strtotime($flight['scheduled_departure_at'])) : '-') ?></small></td><td><?= e($flight['flight_type_name']) ?></td><td><?= e($flight['tail_number'] ?: '-') ?><small>Park <?= e($flight['stand'] ?: '-') ?></small></td><td><?= e($flight['assignee_name'] ?: 'Atanmamış') ?></td><td><span class="badge <?= e($flight['status']) ?>"><?= e(flight_status_label($flight['status'])) ?></span></td><td class="actions"><a class="btn btn-small" href="<?= e(url_for('/flight').'?id='.(int)$flight['id']) ?>">Aç</a><?php if (can($actor,'flights.update',$context)): ?><a class="btn btn-small" href="<?= e(url_for('/flights/edit').'?id='.(int)$flight['id']) ?>">Düzenle</a><?php endif; ?><?php if (can($actor,'flights.assign',$context)): ?><a class="btn btn-small" href="<?= e(url_for('/flights/assign').'?id='.(int)$flight['id']) ?>">Ata</a><?php endif; ?></td></tr><?php endforeach; ?><?php if(!$flights):?><tr><td colspan="11" class="empty">Uçuş bulunmuyor.</td></tr><?php endif;?></tbody></table></section><?php
 }
 
 function render_flight_edit(array $actor): void
@@ -444,13 +446,13 @@ function render_flight_detail(array $actor): void
         <article class="panel flight-leg"><p class="eyebrow">Departure / devam seferi</p><h2><?= e($flight['departure_flight_number'] ?: '-') ?></h2><p><?= e(($flight['departure_origin'] ?: '-') . ' → ' . ($flight['departure_destination'] ?: '-')) ?></p><small>STD <?= e($flight['scheduled_departure_at'] ? date('d.m.Y H:i', strtotime($flight['scheduled_departure_at'])) : '-') ?></small></article>
     </section>
     <?php if ($flight['status'] === 'scheduled' && $isResponsible && can($actor, 'flights.complete', $context)): ?>
-        <form method="post" class="commit-bar operation-start" data-confirm="Bu uçuş operasyonu başlatılacak. Devam edilsin mi?"><input type="hidden" name="action" value="start_flight"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><div><strong>Operasyonu başlat</strong><p>Başlattığınızda uçuş Genel Bakış ekranında “Devam ediyor” olarak görünür.</p></div><button class="btn btn-success">Operasyonu Başlat</button></form>
+        <form method="post" action="<?= e(url_for('/flight') . '?id=' . $id) ?>" class="commit-bar operation-start" data-confirm="Bu uçuş operasyonu başlatılacak. Devam edilsin mi?"><input type="hidden" name="action" value="start_flight"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><div><strong>Operasyonu başlat</strong><p>Başlattığınızda uçuş Genel Bakış ekranında “Devam ediyor” olarak görünür.</p></div><button class="btn btn-success">Operasyonu Başlat</button></form>
     <?php elseif ($flight['status'] === 'scheduled' && !$isResponsible): ?>
         <section class="panel notice">Operasyonun başlayabilmesi için uçuşun sorumlu kullanıcıya atanması gerekir.</section>
     <?php endif; ?>
     <?php if (can($actor, 'processes.view', $context)):
         $processes = DB::fetchAll(
-            'SELECT pt.id, pt.name, pt.input_type, m.required, COALESCE(fp.state, "not_started") AS state,
+            'SELECT pt.id, pt.name, pt.input_type, COALESCE(fp.state, "not_started") AS state,
                     fp.started_at, fp.finished_at, fp.value_datetime, fp.value_text
              FROM flight_type_process_map m JOIN process_types pt ON pt.id = m.process_type_id
              LEFT JOIN flight_processes fp ON fp.flight_id = ? AND fp.process_type_id = pt.id
@@ -464,19 +466,19 @@ function render_flight_detail(array $actor): void
             $flightIsClosed = in_array($flight['status'], ['completed', 'cancelled', 'archived'], true);
             $canEdit = $flight['status'] === 'active' && $isResponsible && can($actor, 'processes.update', $context) && ((!$recorded && !$flightIsClosed) || $canOverride);
             ?>
-            <article class="panel process-card state-<?= e($process['state']) ?>">
-                <div class="section-heading"><div><p class="eyebrow"><?= $process['required'] ? 'Zorunlu' : 'Opsiyonel' ?></p><h2><?= e($process['name']) ?></h2></div><span class="badge <?= e($process['state']) ?>"><?= e($process['state']) ?></span></div>
+            <article class="panel process-card state-<?= e($process['state']) ?>" data-process-id="<?= (int)$process['id'] ?>">
+                <div class="section-heading"><div><p class="eyebrow">Operasyon süreci</p><h2><?= e($process['name']) ?></h2></div><span class="badge <?= e($process['state']) ?>"><?= e($process['state']) ?></span></div>
                 <?php if ($process['input_type'] === 'datetime' && $process['value_datetime']): ?><p class="process-value"><?= e(date('d.m.Y H:i:s', strtotime($process['value_datetime']))) ?></p><?php endif; ?>
                 <?php if ($process['input_type'] === 'text' && trim((string)$process['value_text']) !== ''): ?><p class="process-value"><?= nl2br(e($process['value_text'])) ?></p><?php endif; ?>
                 <?php if ($process['input_type'] === 'state' && $process['started_at']): ?><p class="muted">Başlangıç: <?= e(date('d.m.Y H:i:s', strtotime($process['started_at']))) ?><?php if ($process['finished_at']): ?><br>Bitiş: <?= e(date('d.m.Y H:i:s', strtotime($process['finished_at']))) ?><?php endif; ?></p><?php endif; ?>
                 <?php if ($canEdit && $process['input_type'] === 'state'): ?>
-                    <div class="actions"><?php foreach (['start' => 'Başlat', 'finish' => 'Bitir', 'not_used' => 'Kullanılmadı'] as $action => $label): ?><form method="post"><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="process_type_id" value="<?= (int)$process['id'] ?>"><input type="hidden" name="process_action" value="<?= e($action) ?>"><?= csrf_field() ?><button class="btn btn-small"><?= e($label) ?></button></form><?php endforeach; ?></div>
+                    <div class="actions"><?php foreach (['start' => 'Başlat', 'finish' => 'Bitir', 'not_used' => 'Kullanılmadı'] as $action => $label): ?><form method="post" action="<?= e(url_for('/flight') . '?id=' . $id) ?>" data-process-form><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="process_type_id" value="<?= (int)$process['id'] ?>"><input type="hidden" name="process_action" value="<?= e($action) ?>"><?= csrf_field() ?><button class="btn btn-small"><?= e($label) ?></button></form><?php endforeach; ?></div>
                 <?php elseif ($canEdit && $process['input_type'] === 'datetime'): ?>
-                    <form method="post" class="inline-form"><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="process_type_id" value="<?= (int)$process['id'] ?>"><input type="hidden" name="process_action" value="mark_time"><?= csrf_field() ?><input type="datetime-local" name="value_datetime" value="<?= e(datetime_local($process['value_datetime'])) ?>"><button class="btn btn-small">Saati Kaydet</button></form>
+                    <form method="post" action="<?= e(url_for('/flight') . '?id=' . $id) ?>" class="inline-form" data-process-form><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="process_type_id" value="<?= (int)$process['id'] ?>"><input type="hidden" name="process_action" value="mark_time"><?= csrf_field() ?><input type="datetime-local" name="value_datetime" value="<?= e(datetime_local($process['value_datetime'])) ?>"><button class="btn btn-small">Saati Kaydet</button></form>
                 <?php elseif ($canEdit && $process['input_type'] === 'text'): ?>
-                    <form method="post"><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="process_type_id" value="<?= (int)$process['id'] ?>"><input type="hidden" name="process_action" value="save_text"><?= csrf_field() ?><textarea name="value_text" rows="3"><?= e($process['value_text']) ?></textarea><button class="btn btn-small">Notu Kaydet</button></form>
+                    <form method="post" action="<?= e(url_for('/flight') . '?id=' . $id) ?>" data-process-form><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="process_type_id" value="<?= (int)$process['id'] ?>"><input type="hidden" name="process_action" value="save_text"><?= csrf_field() ?><textarea name="value_text" rows="3"><?= e($process['value_text']) ?></textarea><button class="btn btn-small">Notu Kaydet</button></form>
                 <?php endif; ?>
-                <?php if ($canOverride && ($recorded || $process['state'] !== 'not_started')): ?><form method="post" class="reset-form" data-confirm="Bu süreç kaydı sıfırlanacak. Devam edilsin mi?"><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="process_type_id" value="<?= (int)$process['id'] ?>"><input type="hidden" name="process_action" value="reset"><?= csrf_field() ?><button class="btn btn-ghost btn-small">Sıfırla</button></form><?php endif; ?>
+                <?php if ($canOverride && ($recorded || $process['state'] !== 'not_started')): ?><form method="post" action="<?= e(url_for('/flight') . '?id=' . $id) ?>" class="reset-form" data-process-form data-confirm="Bu süreç kaydı sıfırlanacak. Devam edilsin mi?"><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="process_type_id" value="<?= (int)$process['id'] ?>"><input type="hidden" name="process_action" value="reset"><?= csrf_field() ?><button class="btn btn-ghost btn-small">Sıfırla</button></form><?php endif; ?>
             </article>
         <?php endforeach; ?>
         </section>
@@ -484,7 +486,7 @@ function render_flight_detail(array $actor): void
         <section class="panel notice">Bu uçuşun operasyon süreçlerini görüntüleme yetkiniz yok.</section>
     <?php endif; ?>
     <?php if ($flight['status'] === 'active' && $isResponsible && can($actor, 'flights.complete', $context)): ?>
-        <form method="post" class="commit-bar" data-confirm="Zorunlu süreçler kontrol edilerek uçuş tamamlanacak. Devam edilsin mi?"><input type="hidden" name="action" value="complete_flight"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><div><strong>Operasyonu tamamla</strong><p>Zorunlu süreçler bitmeden tamamlanamaz.</p></div><button class="btn btn-success">Uçuşu Tamamla</button></form>
+        <form method="post" action="<?= e(url_for('/flight') . '?id=' . $id) ?>" class="commit-bar" data-confirm="Uçuş operasyonu tamamlanacak. Devam edilsin mi?"><input type="hidden" name="action" value="complete_flight"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><div><strong>Operasyonu tamamla</strong><p>Süreçlerin durumundan bağımsız olarak operasyonu kapatır.</p></div><button class="btn btn-success">Uçuşu Tamamla</button></form>
     <?php endif;
 }
 

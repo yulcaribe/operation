@@ -349,17 +349,6 @@ final class FlightService
         Authorization::require($actor, 'flights.complete', self::context($flight));
         if (!self::isAssignedTo($flightId, (int)$actor['id'])) throw new RuntimeException('Bu uçuş size atanmamış.');
         if ($flight['status'] !== 'active') throw new RuntimeException('Uçuş tamamlanmadan önce operasyon başlatılmalıdır.');
-        $missing = DB::fetchAll(
-            'SELECT pt.name FROM flight_type_process_map m
-             JOIN process_types pt ON pt.id = m.process_type_id
-             LEFT JOIN flight_processes fp ON fp.flight_id = ? AND fp.process_type_id = pt.id
-             WHERE m.flight_type_id = ? AND m.required = 1
-               AND ((pt.input_type = "state" AND (fp.state IS NULL OR fp.state != "finished"))
-                 OR (pt.input_type = "datetime" AND fp.value_datetime IS NULL)
-                 OR (pt.input_type = "text" AND (fp.value_text IS NULL OR fp.value_text = "")))',
-            [$flightId, (int)$flight['flight_type_id']]
-        );
-        if ($missing) throw new RuntimeException('Zorunlu süreçler tamamlanmadı: ' . implode(', ', array_column($missing, 'name')));
         DB::begin();
         try {
             $changed = DB::execute('UPDATE flights SET status = "completed", updated_by = ? WHERE id = ? AND status = "active"', [(int)$actor['id'], $flightId]);
