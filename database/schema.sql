@@ -265,7 +265,7 @@ INSERT INTO permissions (code, name, permission_group, description) VALUES
     ('flights.complete', 'Uçuş Tamamlama', 'Uçuşlar', 'Operasyon sürecini tamamlar'),
     ('imports.view', 'Uçuş Ekleme Ekranı', 'Uçuş Ekle', 'Geçici Excel önizlemesini görüntüler'),
     ('imports.stage', 'Excel Yükleme ve Düzeltme', 'Uçuş Ekle', 'Exceli önizleme alanına yükler ve düzeltir'),
-    ('imports.commit', 'Excel Uçuşlarını Onaylama', 'Uçuş Ekle', 'Düzeltilmiş uçuşları SQL uçuş tablosuna aktarır'),
+    ('imports.commit', 'Uçuş Kaydetme', 'Uçuş Ekle', 'Excel önizlemesini onaylar veya Uçuş Ekle sayfasından manuel uçuş kaydeder'),
     ('processes.view', 'Süreç Görüntüleme', 'Operasyon Süreçleri', 'Uçuş operasyon süreçlerini görüntüler'),
     ('processes.update', 'Süreç Güncelleme', 'Operasyon Süreçleri', 'Süreç başlangıç, bitiş ve notlarını günceller'),
     ('reports.view', 'Rapor Görüntüleme', 'Raporlar', 'Yetki kapsamındaki operasyon raporlarını görüntüler'),

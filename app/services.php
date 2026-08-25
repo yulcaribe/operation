@@ -251,7 +251,7 @@ final class FlightService
     {
         $flightId = (int)($data['flight_id'] ?? 0);
         $existing = $flightId > 0 ? self::find($flightId) : null;
-        if (!$existing) throw new RuntimeException('Uçuşlar yalnızca Uçuş Ekle ekranındaki Excel aktarımıyla oluşturulabilir.');
+        if (!$existing) throw new RuntimeException('Yeni uçuşlar yalnızca Uçuş Ekle ekranından oluşturulabilir.');
         Authorization::require($actor, 'flights.update', self::context($existing));
         $payload = self::normalize($data);
         $payload['source'] = (string)$existing['source'];
@@ -274,6 +274,30 @@ final class FlightService
             throw $error;
         }
         return $flightId;
+    }
+
+    public static function createManualFromImports(array $actor, array $data): int
+    {
+        $payload = self::normalize($data);
+        $payload['status'] = 'scheduled';
+        $payload['source'] = 'manual';
+        $payload['source_key'] = null;
+        $payload['actual_arrival_at'] = null;
+        $payload['actual_departure_at'] = null;
+        Authorization::require($actor, 'imports.commit', ['airline_id' => (int)$payload['airline_id']]);
+        $errors = self::validate($payload);
+        if ($errors) throw new RuntimeException(implode(' ', $errors));
+
+        DB::begin();
+        try {
+            $flightId = self::create($payload, (int)$actor['id']);
+            Audit::record((int)$actor['id'], 'flight.created_manual', 'flight', $flightId, $payload);
+            DB::commit();
+            return $flightId;
+        } catch (Throwable $error) {
+            DB::rollback();
+            throw $error;
+        }
     }
 
     public static function restoreCompletedStatus(array $actor, int $flightId, string $targetStatus): void
