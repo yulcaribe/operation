@@ -408,6 +408,27 @@ function render_timeline(array $actor): void
             <a class="btn btn-small" href="<?= e(url_for('/timeline') . '?date=' . $nextDate) ?>" aria-label="Sonraki gün">→</a>
             <a class="btn btn-ghost btn-small" href="<?= e(url_for('/timeline') . '?date=' . $today) ?>">Bugün</a>
         </div>
+        <div class="timeline-filter-tools" aria-label="Zaman çizelgesi filtreleri">
+            <label>Uçuş durumu
+                <select data-timeline-flight-status>
+                    <option value="">Tüm uçuşlar</option>
+                    <option value="scheduled">Planlanan</option>
+                    <option value="active">Devam ediyor</option>
+                    <option value="completed">Tamamlanan</option>
+                    <option value="cancelled">İptal</option>
+                </select>
+            </label>
+            <label>Süreç durumu
+                <select data-timeline-process-status title="Seçilen durumda en az bir süreci bulunan uçuşları gösterir">
+                    <option value="">Tüm süreçler</option>
+                    <option value="not_started">Başlamadı</option>
+                    <option value="started">Devam ediyor</option>
+                    <option value="finished">Tamamlandı</option>
+                    <option value="not_used">Kullanılmadı</option>
+                </select>
+            </label>
+            <span class="timeline-filter-count" data-timeline-filter-count aria-live="polite">Uçuşlar yükleniyor…</span>
+        </div>
         <div class="timeline-view-tools">
             <button type="button" class="btn btn-ghost btn-small" data-timeline-now>Şimdiye Git</button>
             <button type="button" class="btn btn-ghost btn-small" data-timeline-refresh>Yenile</button>

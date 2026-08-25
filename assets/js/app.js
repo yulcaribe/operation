@@ -144,6 +144,9 @@
         const nowButton = document.querySelector('[data-timeline-now]');
         const refreshButton = document.querySelector('[data-timeline-refresh]');
         const focusButton = document.querySelector('[data-timeline-focus]');
+        const flightStatusFilter = document.querySelector('[data-timeline-flight-status]');
+        const processStatusFilter = document.querySelector('[data-timeline-process-status]');
+        const filterCount = document.querySelector('[data-timeline-filter-count]');
         const drawerLayer = document.querySelector('[data-timeline-drawer-layer]');
         const drawer = document.querySelector('[data-timeline-drawer]');
         const drawerTitle = document.querySelector('[data-timeline-drawer-title]');
@@ -232,6 +235,25 @@
         };
         const allFlights = (data) => (data.rows || []).flatMap((row) => row.flights).concat(data.missing || []);
         const findFlight = (flightId) => currentData ? allFlights(currentData).find((flight) => Number(flight.id) === Number(flightId)) : null;
+        const flightMatchesFilters = (flight) => {
+            const selectedFlightStatus = flightStatusFilter ? flightStatusFilter.value : '';
+            const selectedProcessStatus = processStatusFilter ? processStatusFilter.value : '';
+            if (selectedFlightStatus && flight.status !== selectedFlightStatus) return false;
+            if (selectedProcessStatus && !(flight.processes || []).some((process) => process.state === selectedProcessStatus)) return false;
+            return true;
+        };
+        const filteredTimelineData = (data) => {
+            const sourceRows = data.rows || [];
+            const sourceMissing = data.missing || [];
+            const rows = sourceRows
+                .map((row) => ({ ...row, flights: (row.flights || []).filter(flightMatchesFilters) }))
+                .filter((row) => row.flights.length > 0);
+            const missing = sourceMissing.filter(flightMatchesFilters);
+            const visibleCount = rows.reduce((total, row) => total + row.flights.length, 0) + missing.length;
+            const totalCount = sourceRows.reduce((total, row) => total + (row.flights || []).length, 0) + sourceMissing.length;
+            if (filterCount) filterCount.textContent = `${visibleCount} / ${totalCount} uçuş`;
+            return { ...data, rows, missing };
+        };
 
         const setFormValue = (form, name, value) => {
             const field = form ? form.elements.namedItem(name) : null;
@@ -370,6 +392,7 @@
         };
 
         const renderTimeline = (data, scrollTarget = null) => {
+            const viewData = filteredTimelineData(data);
             const previousScroll = scrollArea.scrollLeft;
             const currentMinuteWidth = minuteWidth();
             const axisWidth = labelWidth();
@@ -399,7 +422,7 @@
             header.append(hours);
             canvas.append(header);
 
-            (data.rows || []).forEach((staffRow) => {
+            (viewData.rows || []).forEach((staffRow) => {
                 const laidOut = layoutLanes(staffRow.flights || []);
                 const laneCount = Math.max(1, ...laidOut.map((item) => item.lane + 1));
                 const rowHeight = rowPadding + (laneCount * barHeight) + ((laneCount - 1) * laneGap);
@@ -449,14 +472,17 @@
                 canvas.append(row);
             });
 
-            if (!(data.rows || []).length) canvas.append(makeElement('div', 'timeline-board-empty', 'Seçili günde yetki kapsamınıza giren uçuş bulunmuyor.'));
-            if (data.now_minute !== null && Number(data.now_minute) >= 0 && Number(data.now_minute) <= 1440) {
+            if (!(viewData.rows || []).length) {
+                const hasActiveFilter = Boolean((flightStatusFilter && flightStatusFilter.value) || (processStatusFilter && processStatusFilter.value));
+                canvas.append(makeElement('div', 'timeline-board-empty', hasActiveFilter ? 'Seçilen filtrelere uygun zaman bilgili uçuş bulunmuyor.' : 'Seçili günde yetki kapsamınıza giren uçuş bulunmuyor.'));
+            }
+            if (viewData.now_minute !== null && Number(viewData.now_minute) >= 0 && Number(viewData.now_minute) <= 1440) {
                 const nowLine = makeElement('div', 'timeline-now-line');
-                nowLine.style.left = `${axisWidth + (Number(data.now_minute) * currentMinuteWidth)}px`;
+                nowLine.style.left = `${axisWidth + (Number(viewData.now_minute) * currentMinuteWidth)}px`;
                 nowLine.innerHTML = '<span>Şimdi</span>';
                 canvas.append(nowLine);
             }
-            renderMissing(data.missing || []);
+            renderMissing(viewData.missing || []);
             feedback.className = 'panel timeline-feedback';
             feedback.hidden = true;
             updatedLabel.textContent = `Son güncelleme ${compactDateTime(data.generated_at)}`;
@@ -540,6 +566,9 @@
         if (flightForm) flightForm.addEventListener('submit', submitDrawerForm);
         if (assignForm) assignForm.addEventListener('submit', submitDrawerForm);
         if (statusForm) statusForm.addEventListener('submit', submitDrawerForm);
+        const applyTimelineFilters = () => { if (currentData) renderTimeline(currentData); };
+        if (flightStatusFilter) flightStatusFilter.addEventListener('change', applyTimelineFilters);
+        if (processStatusFilter) processStatusFilter.addEventListener('change', applyTimelineFilters);
         zoomOut.addEventListener('click', () => changeZoom(-1));
         zoomIn.addEventListener('click', () => changeZoom(1));
         refreshButton.addEventListener('click', () => loadTimeline(true));
