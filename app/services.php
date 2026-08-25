@@ -154,7 +154,7 @@ final class UserService
         $allows = array_values(array_unique(array_map('intval', (array)($data['allow_permission_ids'] ?? []))));
         $denies = array_values(array_unique(array_map('intval', (array)($data['deny_permission_ids'] ?? []))));
         $validIds = array_map('intval', array_column(DB::fetchAll(
-            'SELECT id FROM permissions WHERE code IN ("flights.view", "flights.create", "flights.update", "flights.cancel", "flights.delete", "flights.assign", "flights.complete", "processes.view", "processes.update", "processes.override", "reports.view")'
+            'SELECT id FROM permissions WHERE code IN ("flights.view", "flights.update", "flights.cancel", "flights.delete", "flights.assign", "flights.complete", "processes.view", "processes.update", "reports.view")'
         ), 'id'));
         $scopeType = in_array('supervisor', $roles, true) ? 'airline' : 'assigned';
         $scopeAirlines = $scopeType === 'airline' ? $airlineIds : [null];
@@ -251,41 +251,53 @@ final class FlightService
     {
         $flightId = (int)($data['flight_id'] ?? 0);
         $existing = $flightId > 0 ? self::find($flightId) : null;
-        Authorization::require($actor, $existing ? 'flights.update' : 'flights.create', $existing ? self::context($existing) : []);
+        if (!$existing) throw new RuntimeException('Uçuşlar yalnızca Uçuş Ekle ekranındaki Excel aktarımıyla oluşturulabilir.');
+        Authorization::require($actor, 'flights.update', self::context($existing));
         $payload = self::normalize($data);
+        $payload['source'] = (string)$existing['source'];
+        $payload['source_key'] = $existing['source_key'];
+        $payload['actual_arrival_at'] = $existing['actual_arrival_at'];
+        $payload['actual_departure_at'] = $existing['actual_departure_at'];
         $errors = self::validate($payload);
         if ($errors) throw new RuntimeException(implode(' ', $errors));
-        if (!$existing && $payload['status'] !== 'scheduled') throw new RuntimeException('Yeni uçuş planlanan durumda oluşturulmalıdır.');
-        if ($existing && $payload['status'] === 'active' && $existing['status'] !== 'active') {
-            throw new RuntimeException('Uçuş yalnızca atanan sorumlu tarafından operasyon ekranından başlatılabilir.');
-        }
-        if ($payload['status'] === 'completed' && (!$existing || $existing['status'] !== 'completed')) {
-            throw new RuntimeException('Uçuş yalnızca operasyon ekranındaki tamamlama işlemiyle tamamlanabilir.');
-        }
-        if ($existing && $payload['status'] !== $existing['status'] && $payload['status'] === 'cancelled') {
-            Authorization::require($actor, 'flights.cancel', self::context($existing));
-        }
-        if ($existing && $existing['status'] === 'completed' && $payload['status'] !== 'completed') {
-            Authorization::require($actor, 'flights.cancel', self::context($existing));
-        }
-        if (!$existing && !can($actor, 'flights.create', ['airline_id' => (int)$payload['airline_id']])) throw new RuntimeException('Seçilen havayolu için uçuş oluşturma yetkiniz yok.');
-        if ($existing && (int)$existing['airline_id'] !== (int)$payload['airline_id'] && !can($actor, 'flights.update', ['airline_id' => (int)$payload['airline_id']])) {
+        if ($payload['status'] !== $existing['status']) throw new RuntimeException('Uçuş durumu bilgi düzenleme formundan değiştirilemez.');
+        if ((int)$existing['airline_id'] !== (int)$payload['airline_id'] && !can($actor, 'flights.update', ['airline_id' => (int)$payload['airline_id']])) {
             throw new RuntimeException('Yeni havayolu kapsamı için yetkiniz yok.');
         }
         DB::begin();
         try {
-            if ($existing) {
-                self::update($flightId, $payload, (int)$actor['id']);
-            } else {
-                $flightId = self::create($payload, (int)$actor['id']);
-            }
-            Audit::record((int)$actor['id'], $existing ? 'flight.updated' : 'flight.created', 'flight', $flightId, $payload);
+            self::update($flightId, $payload, (int)$actor['id']);
+            Audit::record((int)$actor['id'], 'flight.updated', 'flight', $flightId, $payload);
             DB::commit();
         } catch (Throwable $error) {
             DB::rollback();
             throw $error;
         }
         return $flightId;
+    }
+
+    public static function restoreCompletedStatus(array $actor, int $flightId, string $targetStatus): void
+    {
+        if (!UserService::isAdmin((int)$actor['id'])) throw new RuntimeException('Tamamlanan uçuş durumunu yalnızca admin değiştirebilir.');
+        $flight = self::find($flightId);
+        if (!$flight) throw new RuntimeException('Uçuş bulunamadı.');
+        if ($flight['status'] !== 'completed') throw new RuntimeException('Yalnızca tamamlanmış uçuşun durumu geri alınabilir.');
+        if (!in_array($targetStatus, ['scheduled', 'active', 'cancelled'], true)) throw new RuntimeException('Hedef uçuş durumu geçersiz.');
+
+        DB::begin();
+        try {
+            $changed = DB::execute(
+                'UPDATE flights SET status = ?, updated_by = ? WHERE id = ? AND status = "completed"',
+                [$targetStatus, (int)$actor['id'], $flightId]
+            );
+            if ($changed !== 1) throw new RuntimeException('Uçuş başka bir işlem tarafından değiştirilmiş.');
+            if (in_array($targetStatus, ['scheduled', 'active'], true)) {
+                $assignment = DB::fetch('SELECT id FROM flight_assignments WHERE flight_id = ? AND status = "completed" ORDER BY id DESC LIMIT 1', [$flightId]);
+                if ($assignment) DB::execute('UPDATE flight_assignments SET status = "active", unassigned_at = NULL WHERE id = ?', [(int)$assignment['id']]);
+            }
+            Audit::record((int)$actor['id'], 'flight.status_restored', 'flight', $flightId, ['from' => 'completed', 'to' => $targetStatus]);
+            DB::commit();
+        } catch (Throwable $error) { DB::rollback(); throw $error; }
     }
 
     public static function assignments(int $flightId): array
@@ -447,18 +459,15 @@ final class ProcessService
         $action = (string)($data['process_action'] ?? '');
         $flight = FlightService::find($flightId);
         if (!$flight) throw new RuntimeException('Uçuş bulunamadı.');
-        $permission = $action === 'reset' ? 'processes.override' : 'processes.update';
-        Authorization::require($actor, $permission, FlightService::context($flight));
-        if ($action !== 'reset') {
-            if ($flight['status'] !== 'active') throw new RuntimeException('Önce uçuş operasyonunu başlatın.');
-            if (!FlightService::isAssignedTo($flightId, (int)$actor['id'])) throw new RuntimeException('Bu uçuş size atanmamış.');
-        }
+        Authorization::require($actor, 'processes.update', FlightService::context($flight));
+        if ($flight['status'] !== 'active') throw new RuntimeException('Önce uçuş operasyonunu başlatın.');
+        if (!FlightService::isAssignedTo($flightId, (int)$actor['id'])) throw new RuntimeException('Süreçleri yalnızca uçuşun atanmış kullanıcısı değiştirebilir.');
         $mapped = DB::fetch('SELECT pt.input_type FROM flight_type_process_map m JOIN process_types pt ON pt.id = m.process_type_id WHERE m.flight_type_id = ? AND m.process_type_id = ?', [(int)$flight['flight_type_id'], $processTypeId]);
         if (!$mapped) throw new RuntimeException('Süreç bu uçuş tipine ait değil.');
         $allowedActions = [
-            'state' => ['start', 'finish', 'not_used', 'undo', 'reset'],
-            'datetime' => ['mark_time', 'undo', 'reset'],
-            'text' => ['save_text', 'undo', 'reset'],
+            'state' => ['start', 'finish', 'not_used', 'undo'],
+            'datetime' => ['mark_time', 'undo'],
+            'text' => ['save_text', 'undo'],
         ];
         if (!in_array($action, $allowedActions[$mapped['input_type']] ?? [], true)) throw new RuntimeException('Süreç veri tipiyle işlem uyuşmuyor.');
         $current = DB::fetch('SELECT * FROM flight_processes WHERE flight_id = ? AND process_type_id = ?', [$flightId, $processTypeId]);
@@ -468,9 +477,6 @@ final class ProcessService
             || $current['value_datetime'] !== null
             || trim((string)$current['value_text']) !== ''
         );
-        if (($alreadyRecorded || in_array($flight['status'], ['completed', 'cancelled', 'archived'], true)) && !in_array($action, ['undo', 'reset'], true)) {
-            Authorization::require($actor, 'processes.override', FlightService::context($flight));
-        }
         $state = 'not_started'; $started = null; $finished = null; $valueDate = null; $valueText = null;
         if ($action === 'start') {
             if ($currentState !== 'not_started') throw new RuntimeException('Bu süreç zaten başlatılmış veya sonuçlandırılmış.');
@@ -496,19 +502,24 @@ final class ProcessService
                 $started = $current['started_at'] ?? date('Y-m-d H:i:s');
             }
         }
-        elseif ($action === 'mark_time') { $state = 'finished'; $valueDate = datetime_input($data['value_datetime'] ?? '') ?: date('Y-m-d H:i:s'); }
-        elseif ($action === 'save_text') { $valueText = trim((string)($data['value_text'] ?? '')); $state = $valueText === '' ? 'not_started' : 'finished'; }
-        elseif ($action !== 'reset') throw new RuntimeException('Geçersiz süreç işlemi.');
+        elseif ($action === 'mark_time') {
+            if ($alreadyRecorded || $currentState !== 'not_started') throw new RuntimeException('Tamamlanan süreç önce geri alınmalıdır.');
+            $state = 'finished'; $valueDate = datetime_input($data['value_datetime'] ?? '') ?: date('Y-m-d H:i:s');
+        }
+        elseif ($action === 'save_text') {
+            if ($alreadyRecorded || $currentState !== 'not_started') throw new RuntimeException('Tamamlanan süreç önce geri alınmalıdır.');
+            $valueText = trim((string)($data['value_text'] ?? '')); $state = $valueText === '' ? 'not_started' : 'finished';
+        }
+        else throw new RuntimeException('Geçersiz süreç işlemi.');
         DB::execute(
             'INSERT INTO flight_processes (flight_id, process_type_id, state, started_at, finished_at, value_datetime, value_text, updated_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE state = VALUES(state), started_at = VALUES(started_at), finished_at = VALUES(finished_at), value_datetime = VALUES(value_datetime), value_text = VALUES(value_text), updated_by = VALUES(updated_by)',
             [$flightId, $processTypeId, $state, $started, $finished, $valueDate, $valueText, (int)$actor['id']]
         );
-        if ($action === 'reset') DB::execute('UPDATE flight_processes SET state = "not_started", started_at = NULL, finished_at = NULL, value_datetime = NULL, value_text = NULL, updated_by = ? WHERE flight_id = ? AND process_type_id = ?', [(int)$actor['id'], $flightId, $processTypeId]);
         Audit::record((int)$actor['id'], 'process.' . $action, 'flight', $flightId, [
             'process_type_id' => $processTypeId,
-            'state' => $action === 'reset' ? 'not_started' : $state,
+            'state' => $state,
             'value_datetime' => $valueDate,
             'value_text' => $valueText,
         ]);

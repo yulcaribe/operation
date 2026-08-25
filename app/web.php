@@ -57,7 +57,7 @@ function handle_action(array $user, string $path): never
             '/users/edit' => ['save_user', 'delete_user'],
             '/roles' => ['save_role_permissions'],
             '/airlines' => ['save_airline'],
-            '/flights/edit' => ['save_flight', 'delete_flight'],
+            '/flights/edit' => ['save_flight', 'restore_flight_status', 'delete_flight'],
             '/flights/assign' => ['assign_flight'],
             '/flight' => ['start_flight', 'save_process', 'complete_flight'],
             '/imports' => ['stage_import'],
@@ -85,6 +85,11 @@ function handle_action(array $user, string $path): never
             case 'save_flight':
                 $flightId = FlightService::save($user, $_POST);
                 $redirect = '/flights/edit?id=' . $flightId;
+                break;
+            case 'restore_flight_status':
+                $flightId = (int)($_POST['flight_id'] ?? 0);
+                $redirect = '/flights/edit?id=' . $flightId;
+                FlightService::restoreCompletedStatus($user, $flightId, (string)($_POST['target_status'] ?? ''));
                 break;
             case 'delete_flight':
                 FlightService::delete($user, (int)($_POST['flight_id'] ?? 0));
@@ -204,7 +209,7 @@ function page_title(string $path): string
     return [
         '/' => 'Genel Bakış', '/users' => 'Kullanıcılar', '/users/edit' => 'Kullanıcı Düzenle', '/roles' => 'Rol ve Yetkiler',
         '/airlines' => 'Havayolları ve ICAO', '/flights' => 'Uçuşlar', '/flights/edit' => 'Uçuş Bilgileri', '/flights/assign' => 'Uçuş Atama',
-        '/imports' => 'Excel Import', '/imports/review' => 'Import Önizleme ve Düzeltme', '/flight' => 'Uçuş Operasyonu', '/reports' => 'Raporlar', '/audit' => 'İşlem Kayıtları', '/profile' => 'Profilim',
+        '/imports' => 'Uçuş Ekle', '/imports/review' => 'Uçuş Ekle · Önizleme', '/flight' => 'Uçuş Operasyonu', '/reports' => 'Raporlar', '/audit' => 'İşlem Kayıtları', '/profile' => 'Profilim',
     ][$path] ?? 'Operation';
 }
 
@@ -212,7 +217,7 @@ function nav_links(array $user, string $path): string
 {
     $links = ['/'=>'Genel Bakış'];
     if (can($user, 'flights.view')) $links['/flights'] = 'Uçuşlar';
-    if (Authorization::canAny($user, ['imports.view', 'imports.stage', 'imports.commit'])) $links['/imports'] = 'Excel Import';
+    if (Authorization::canAny($user, ['imports.view', 'imports.stage', 'imports.commit'])) $links['/imports'] = 'Uçuş Ekle';
     if (can($user, 'users.view')) $links['/users'] = 'Kullanıcılar';
     if (can($user, 'roles.view')) $links['/roles'] = 'Rol ve Yetkiler';
     if (Authorization::canAny($user, ['airlines.view', 'airlines.manage'])) $links['/airlines'] = 'Havayolları / ICAO';
@@ -271,7 +276,7 @@ function render_dashboard(array $user): void
         $airlines[$flight['icao_code']] = true;
         if (!empty($flight['assignee_name'])) $assigned++;
     }
-    ?><section class="welcome-card"><div><p class="eyebrow">Hoş geldiniz</p><h2><?= e($user['name']) ?></h2><p>Menü ve uçuş görünürlüğü rolünüz, özel yetkileriniz ve ICAO kapsamınıza göre oluşturuldu.</p></div><?php if (can($user, 'flights.create')): ?><a class="btn btn-light" href="<?= e(url_for('/flights/edit')) ?>">Yeni Uçuş</a><?php endif; ?></section>
+    ?><section class="welcome-card"><div><p class="eyebrow">Hoş geldiniz</p><h2><?= e($user['name']) ?></h2><p>Menü ve uçuş görünürlüğü rolünüz, özel yetkileriniz ve ICAO kapsamınıza göre oluşturuldu.</p></div></section>
     <section class="grid cards-4"><div class="metric"><span>Devam eden operasyon</span><strong><?= count($flights) ?></strong></div><div class="metric"><span>Sorumlusu atanmış</span><strong><?= $assigned ?></strong></div><div class="metric"><span>Aktif ICAO</span><strong><?= count($airlines) ?></strong></div><div class="metric accent"><span>Kapsam</span><strong><?= e(scope_summary($user)) ?></strong></div></section>
     <section class="panel"><div class="section-heading"><div><p class="eyebrow">Canlı operasyon</p><h2>Devam eden uçuşlar</h2><p class="muted">Bu ekranda yalnızca sorumlusu tarafından başlatılmış operasyonlar görünür.</p></div></div></section>
     <?php render_flight_table($flights, $user); ?>
@@ -315,7 +320,7 @@ function render_operation_task_card(array $flight): void
     ?>
     <article class="task-flight-card status-<?= e($flight['status']) ?>">
         <div class="task-card-heading">
-            <div><span class="task-airline-code"><?= e($flight['icao_code']) ?></span><small><?= e($flight['airline_name']) ?></small></div>
+            <div><span class="task-airline-code"><?= e($flight['icao_code']) ?></span><small><?= e($flight['flight_type_name']) ?></small></div>
             <span class="badge <?= e($flight['status']) ?>"><?= e($statusLabel) ?></span>
         </div>
         <div class="task-flight-numbers"><strong><?= e($flight['arrival_flight_number'] ?: '-') ?></strong><span>→</span><strong><?= e($flight['departure_flight_number'] ?: '-') ?></strong></div>
@@ -325,7 +330,7 @@ function render_operation_task_card(array $flight): void
             <div><small>STA</small><strong><?= e($flight['scheduled_arrival_at'] ? date('d.m H:i', strtotime($flight['scheduled_arrival_at'])) : '-') ?></strong></div>
             <div><small>STD</small><strong><?= e($flight['scheduled_departure_at'] ? date('d.m H:i', strtotime($flight['scheduled_departure_at'])) : '-') ?></strong></div>
         </div>
-        <div class="task-card-meta"><span><?= e($flight['tail_number'] ?: 'Uçak -') ?></span><span>Park <?= e($flight['stand'] ?: '-') ?></span><span><?= e($flight['flight_type_name']) ?></span></div>
+        <div class="task-card-meta"><span><?= e($flight['tail_number'] ?: 'Uçak -') ?></span><span>Park <?= e($flight['stand'] ?: '-') ?></span></div>
         <a class="btn <?= $active ? 'btn-success' : ($completed ? 'btn-ghost' : 'btn-primary') ?> task-card-action" href="<?= e(url_for('/flight') . '?id=' . (int)$flight['id']) ?>"><?= e($actionLabel) ?></a>
     </article>
     <?php
@@ -346,7 +351,7 @@ function render_user_edit(array $actor): void
     $access = $userId ? UserService::access($userId) : ['roles'=>['operation'], 'airline_ids'=>[], 'overrides'=>[]];
     $isAdmin = $userId && UserService::isAdmin($userId);
     $airlines = DB::fetchAll('SELECT id, icao_code, name FROM airlines WHERE status = "active" ORDER BY icao_code');
-    $permissions = DB::fetchAll('SELECT id, code, name FROM permissions WHERE code IN ("flights.view", "flights.create", "flights.update", "flights.cancel", "flights.delete", "flights.assign", "flights.complete", "processes.view", "processes.update", "processes.override", "reports.view") ORDER BY code');
+    $permissions = DB::fetchAll('SELECT id, code, name FROM permissions WHERE code IN ("flights.view", "flights.update", "flights.cancel", "flights.delete", "flights.assign", "flights.complete", "processes.view", "processes.update", "reports.view") ORDER BY code');
     $allowIds = []; $denyIds = [];
     foreach ($access['overrides'] as $override) { if ($override['effect'] === 'allow') $allowIds[] = (int)$override['permission_id']; else $denyIds[] = (int)$override['permission_id']; }
     ?><section class="panel"><div class="section-heading"><div><p class="eyebrow"><?= $target ? 'Kullanıcı #' . (int)$target['id'] : 'Yeni hesap' ?></p><h2><?= e($target ? $target['first_name'] . ' ' . $target['last_name'] : 'Kullanıcı oluştur') ?></h2></div><a class="btn btn-ghost" href="<?= e(url_for('/users')) ?>">Listeye dön</a></div>
@@ -377,7 +382,7 @@ function render_flights(array $actor): void
 {
     $status = trim((string)($_GET['status'] ?? ''));
     $flights = FlightService::allVisible($actor, ['status'=>$status]);
-    ?><section class="panel"><div class="section-heading"><div><p class="eyebrow"><?= count($flights) ?> uçuş</p><h2>Yetki kapsamındaki uçuşlar</h2></div><div class="actions"><?php if (can($actor, 'flights.create')): ?><a class="btn btn-primary" href="<?= e(url_for('/flights/edit')) ?>">Uçuş Ekle</a><?php endif; ?></div></div><nav class="tabs"><?php foreach ([''=>'Tümü','scheduled'=>'Planlanan','active'=>'Devam Eden','completed'=>'Tamamlanan','cancelled'=>'İptal'] as $value=>$label): ?><a class="<?= $status===$value?'active':'' ?>" href="<?= e(url_for('/flights') . ($value ? '?status='.$value : '')) ?>"><?= e($label) ?></a><?php endforeach; ?></nav></section><?php render_flight_table($flights, $actor);
+    ?><section class="panel"><div class="section-heading"><div><p class="eyebrow"><?= count($flights) ?> uçuş</p><h2>Yetki kapsamındaki uçuşlar</h2><p class="muted">Bu ekran mevcut uçuşları takip etmek içindir. Yeni uçuşlar Uçuş Ekle menüsünden Excel ile aktarılır.</p></div></div><nav class="tabs"><?php foreach ([''=>'Tümü','scheduled'=>'Planlanan','active'=>'Devam Eden','completed'=>'Tamamlanan','cancelled'=>'İptal'] as $value=>$label): ?><a class="<?= $status===$value?'active':'' ?>" href="<?= e(url_for('/flights') . ($value ? '?status='.$value : '')) ?>"><?= e($label) ?></a><?php endforeach; ?></nav></section><?php render_flight_table($flights, $actor);
 }
 
 function render_flight_table(array $flights, array $actor): void
@@ -387,22 +392,42 @@ function render_flight_table(array $flights, array $actor): void
 
 function render_flight_edit(array $actor): void
 {
-    $id=(int)($_GET['id']??0); $flight=$id?FlightService::find($id):null;
-    if($id&&!$flight) throw new RuntimeException('Uçuş bulunamadı.');
-    Authorization::require($actor,$flight?'flights.update':'flights.create',$flight?FlightService::context($flight):[]);
-    $permission = $flight ? 'flights.update' : 'flights.create';
+    $id = (int)($_GET['id'] ?? 0);
+    if ($id <= 0) redirect_to('/imports');
+    $flight = FlightService::find($id);
+    if (!$flight) throw new RuntimeException('Uçuş bulunamadı.');
+    Authorization::require($actor, 'flights.update', FlightService::context($flight));
+    $permission = 'flights.update';
     $airlines = array_values(array_filter(
         DB::fetchAll('SELECT id, icao_code, name FROM airlines WHERE status="active" ORDER BY icao_code'),
         static function (array $airline) use ($actor, $flight, $permission): bool {
-            if ($flight && (int)$flight['airline_id'] === (int)$airline['id']) return true;
+            if ((int)$flight['airline_id'] === (int)$airline['id']) return true;
             return can($actor, $permission, ['airline_id' => (int)$airline['id']]);
         }
     ));
-    $types=DB::fetchAll('SELECT id,name FROM flight_types WHERE status="active" ORDER BY id'); $f=$flight?:[];
-    $statuses = [(string)($f['status'] ?? 'scheduled')];
-    if ($flight && !in_array($flight['status'], ['completed', 'cancelled'], true) && can($actor, 'flights.cancel', FlightService::context($flight))) $statuses[] = 'cancelled';
-    ?><section class="panel"><div class="section-heading"><div><p class="eyebrow"><?= $flight?'Uçuş #'.$id:'Yeni kayıt' ?></p><h2>Uçuş bilgileri</h2></div><a class="btn btn-ghost" href="<?= e(url_for('/flights')) ?>">Listeye dön</a></div><form method="post" class="form-grid"><input type="hidden" name="action" value="save_flight"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><label>Havayolu<select name="airline_id" required><?php options_rows($airlines,(int)($f['airline_id']??0),'icao_code','name'); ?></select></label><label>Uçuş tipi<select name="flight_type_id" required><?php options_rows($types,(int)($f['flight_type_id']??0),'name'); ?></select></label><label>Arrival uçuş no<input name="arrival_flight_number" value="<?= e($f['arrival_flight_number']??'') ?>"></label><label>Departure uçuş no<input name="departure_flight_number" value="<?= e($f['departure_flight_number']??'') ?>"></label><label>Arrival origin<input name="arrival_origin" value="<?= e($f['arrival_origin']??'') ?>"></label><label>Arrival destination<input name="arrival_destination" value="<?= e($f['arrival_destination']??'') ?>"></label><label>Departure origin<input name="departure_origin" value="<?= e($f['departure_origin']??'') ?>"></label><label>Departure destination<input name="departure_destination" value="<?= e($f['departure_destination']??'') ?>"></label><label>STA<input type="datetime-local" name="scheduled_arrival_at" value="<?= e(datetime_local($f['scheduled_arrival_at']??null)) ?>"></label><label>ETA<input type="datetime-local" name="estimated_arrival_at" value="<?= e(datetime_local($f['estimated_arrival_at']??null)) ?>"></label><label>STD<input type="datetime-local" name="scheduled_departure_at" value="<?= e(datetime_local($f['scheduled_departure_at']??null)) ?>"></label><label>ETD<input type="datetime-local" name="estimated_departure_at" value="<?= e(datetime_local($f['estimated_departure_at']??null)) ?>"></label><label>Kuyruk no<input name="tail_number" value="<?= e($f['tail_number']??'') ?>"></label><label>Uçak tipi<input name="aircraft_type" value="<?= e($f['aircraft_type']??'') ?>"></label><label>Park<input name="stand" value="<?= e($f['stand']??'') ?>"></label><label>Durum<select name="status"><?php foreach($statuses as $status):?><option value="<?= e($status) ?>" <?= selected($f['status']??'scheduled',$status) ?>><?= e($status) ?></option><?php endforeach;?></select></label><label class="full">Not<textarea name="note" rows="3"><?= e($f['note']??'') ?></textarea></label><button class="btn btn-primary">Kaydet</button></form></section>
-    <?php if ($flight && can($actor, 'flights.delete', FlightService::context($flight))): ?><section class="panel danger-zone"><h2>Uçuşu kalıcı sil</h2><p>Uçuş ve bağlı operasyon kayıtları sistemden silinir; yalnızca kısa işlem kaydı tutulur.</p><form method="post" data-confirm="Uçuş kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam edilsin mi?"><input type="hidden" name="action" value="delete_flight"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><button class="btn btn-danger">Uçuşu Sil</button></form></section><?php endif;
+    $types = DB::fetchAll('SELECT id, name FROM flight_types WHERE status="active" ORDER BY id');
+    $isAdmin = UserService::isAdmin((int)$actor['id']);
+    ?>
+    <section class="panel">
+        <div class="section-heading"><div><p class="eyebrow">Uçuş #<?= $id ?></p><h2>Uçuş bilgileri</h2></div><a class="btn btn-ghost" href="<?= e(url_for('/flights')) ?>">Listeye dön</a></div>
+        <form method="post" class="form-grid">
+            <input type="hidden" name="action" value="save_flight"><input type="hidden" name="flight_id" value="<?= $id ?>"><input type="hidden" name="status" value="<?= e($flight['status']) ?>"><?= csrf_field() ?>
+            <label>Havayolu<select name="airline_id" required><?php options_rows($airlines, (int)$flight['airline_id'], 'icao_code', 'name'); ?></select></label>
+            <label>Uçuş tipi<select name="flight_type_id" required><?php options_rows($types, (int)$flight['flight_type_id'], 'name'); ?></select></label>
+            <label>Arrival uçuş no<input name="arrival_flight_number" value="<?= e($flight['arrival_flight_number']) ?>"></label><label>Departure uçuş no<input name="departure_flight_number" value="<?= e($flight['departure_flight_number']) ?>"></label>
+            <label>Arrival origin<input name="arrival_origin" value="<?= e($flight['arrival_origin']) ?>"></label><label>Arrival destination<input name="arrival_destination" value="<?= e($flight['arrival_destination']) ?>"></label>
+            <label>Departure origin<input name="departure_origin" value="<?= e($flight['departure_origin']) ?>"></label><label>Departure destination<input name="departure_destination" value="<?= e($flight['departure_destination']) ?>"></label>
+            <label>STA<input type="datetime-local" name="scheduled_arrival_at" value="<?= e(datetime_local($flight['scheduled_arrival_at'])) ?>"></label><label>ETA<input type="datetime-local" name="estimated_arrival_at" value="<?= e(datetime_local($flight['estimated_arrival_at'])) ?>"></label>
+            <label>STD<input type="datetime-local" name="scheduled_departure_at" value="<?= e(datetime_local($flight['scheduled_departure_at'])) ?>"></label><label>ETD<input type="datetime-local" name="estimated_departure_at" value="<?= e(datetime_local($flight['estimated_departure_at'])) ?>"></label>
+            <label>Kuyruk no<input name="tail_number" value="<?= e($flight['tail_number']) ?>"></label><label>Uçak tipi<input name="aircraft_type" value="<?= e($flight['aircraft_type']) ?>"></label><label>Park<input name="stand" value="<?= e($flight['stand']) ?>"></label>
+            <div><p class="muted">Durum</p><span class="badge <?= e($flight['status']) ?>"><?= e(flight_status_label($flight['status'])) ?></span></div>
+            <label class="full">Not<textarea name="note" rows="3"><?= e($flight['note']) ?></textarea></label><button class="btn btn-primary">Bilgileri Kaydet</button>
+        </form>
+    </section>
+    <?php if ($isAdmin && $flight['status'] === 'completed'): ?>
+        <section class="panel status-restore"><h2>Tamamlanan uçuşu geri al</h2><p class="muted">Yalnızca uçuş durumu değişir; süreç kayıtlarına dokunulmaz. Planlanan veya devam ediyor seçilirse mevcut kullanıcı ataması yeniden aktifleşir.</p><form method="post" class="inline-form" data-confirm="Tamamlanan uçuş seçilen duruma geri alınacak. Devam edilsin mi?"><input type="hidden" name="action" value="restore_flight_status"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><label>Yeni durum<select name="target_status" required><option value="scheduled">Planlanan</option><option value="active">Devam ediyor</option><option value="cancelled">İptal</option></select></label><button class="btn btn-warning">Durumu Değiştir</button></form></section>
+    <?php endif; ?>
+    <?php if (can($actor, 'flights.delete', FlightService::context($flight))): ?><section class="panel danger-zone"><h2>Uçuşu kalıcı sil</h2><p>Uçuş ve bağlı operasyon kayıtları sistemden silinir; yalnızca kısa işlem kaydı tutulur.</p><form method="post" data-confirm="Uçuş kalıcı olarak silinecek. Bu işlem geri alınamaz. Devam edilsin mi?"><input type="hidden" name="action" value="delete_flight"><input type="hidden" name="flight_id" value="<?= $id ?>"><?= csrf_field() ?><button class="btn btn-danger">Uçuşu Sil</button></form></section><?php endif;
 }
 
 function render_flight_assign(array $actor): void
@@ -430,7 +455,7 @@ function render_flight_assign(array $actor): void
 function render_imports(array $actor): void
 {
     ImportService::cleanupTransient();
-    if(can($actor,'imports.stage')):?><section class="panel"><div class="section-heading"><div><p class="eyebrow">Geçici Excel önizlemesi</p><h2>Excel yükle</h2><p class="muted">İlk sayfanın A:Q kolonları okunur. Önizleme geçmiş olarak tutulmaz; SQL aktarımında veya vazgeçildiğinde tamamen silinir.</p></div></div><form method="post" enctype="multipart/form-data" class="form-grid"><input type="hidden" name="action" value="stage_import"><?= csrf_field() ?><label>XLSX veya CSV<input type="file" name="excel_file" accept=".xlsx,.csv" required></label><button class="btn btn-primary">Önizleme Oluştur</button></form><p class="muted">Yeni dosya yüklemek önceki tamamlanmamış önizlemenizi siler. İki saatten eski geçici önizlemeler otomatik temizlenir.</p></section><?php endif;
+    if(can($actor,'imports.stage')):?><section class="panel"><div class="section-heading"><div><p class="eyebrow">Excel ile uçuş ekleme</p><h2>Uçuş Excelini yükle</h2><p class="muted">İlk sayfanın A:Q kolonları okunur. Önizleme geçmiş olarak tutulmaz; SQL aktarımında veya vazgeçildiğinde tamamen silinir.</p></div></div><form method="post" enctype="multipart/form-data" class="form-grid"><input type="hidden" name="action" value="stage_import"><?= csrf_field() ?><label>XLSX veya CSV<input type="file" name="excel_file" accept=".xlsx,.csv" required></label><button class="btn btn-primary">Önizleme Oluştur</button></form><p class="muted">Yeni dosya yüklemek önceki tamamlanmamış önizlemenizi siler. İki saatten eski geçici önizlemeler otomatik temizlenir.</p></section><?php endif;
 }
 
 function render_import_review(array $actor): void
@@ -444,7 +469,7 @@ function render_import_review(array $actor): void
     $canEdit = $batch['status'] === 'preview' && can($actor, 'imports.stage');
     ?>
     <section class="panel">
-        <div class="section-heading"><div><p class="eyebrow">2. adım · <?= e($batch['file_name']) ?></p><h2>Tüm uçuşlar · önizleme ve düzeltme</h2><p class="muted">Exceldeki bütün uçuşlar tek ekrandadır. Bu geçici önizleme aktarılınca veya vazgeçilince silinir.</p></div><div class="actions"><a class="btn btn-ghost" href="<?= e(url_for('/imports')) ?>">Excel yüklemeye dön</a><?php if ($canEdit): ?><form method="post" data-confirm="Excel önizlemesi tamamen silinecek. Devam edilsin mi?"><input type="hidden" name="action" value="discard_import"><input type="hidden" name="batch_id" value="<?= $id ?>"><?= csrf_field() ?><button class="btn btn-danger">Vazgeç ve Sil</button></form><?php endif; ?></div></div>
+        <div class="section-heading"><div><p class="eyebrow">2. adım · <?= e($batch['file_name']) ?></p><h2>Tüm uçuşlar · önizleme ve düzeltme</h2><p class="muted">Exceldeki bütün uçuşlar tek ekrandadır. Bu geçici önizleme aktarılınca veya vazgeçilince silinir.</p></div><div class="actions"><a class="btn btn-ghost" href="<?= e(url_for('/imports')) ?>">Uçuş eklemeye dön</a><?php if ($canEdit): ?><form method="post" data-confirm="Excel önizlemesi tamamen silinecek. Devam edilsin mi?"><input type="hidden" name="action" value="discard_import"><input type="hidden" name="batch_id" value="<?= $id ?>"><?= csrf_field() ?><button class="btn btn-danger">Vazgeç ve Sil</button></form><?php endif; ?></div></div>
         <div class="summary-row"><span><?= $totalRows ?> uçuş</span><span class="text-danger"><?= $invalid ?> hatalı</span><span>Tek ekran</span><span>Durum: <?= e($batch['status']) ?></span></div>
     </section>
     <?php if ($canEdit): ?>
@@ -544,7 +569,6 @@ function render_flight_detail(array $actor): void
         <section class="process-grid">
         <?php foreach ($processes as $process):
             $recorded = $process['state'] === 'finished' || $process['value_datetime'] !== null || trim((string)$process['value_text']) !== '';
-            $canOverride = can($actor, 'processes.override', $context);
             $canUpdate = $flight['status'] === 'active' && $isResponsible && can($actor, 'processes.update', $context);
             $canUndo = $canUpdate && ($recorded || $process['state'] !== 'not_started');
             $canEnterValue = $canUpdate && !$recorded && $process['state'] === 'not_started';
@@ -579,7 +603,6 @@ function render_flight_detail(array $actor): void
                 <?php endif; ?>
                 <?php if ($canUndo && $process['input_type'] !== 'state'): ?><div class="process-actions"><?php render_process_action_form($id, (int)$process['id'], 'undo', 'Geri Al', 'btn btn-warning btn-small'); ?></div><?php endif; ?>
                 <?php if (!$canUpdate && $flight['status'] === 'scheduled' && $isResponsible): ?><p class="process-lock">Uçuşu başlattığınızda bu süreç aktif olacak.</p><?php endif; ?>
-                <?php if ($canOverride && !$canUndo && ($recorded || $process['state'] !== 'not_started')): ?><div class="reset-form"><?php render_process_action_form($id, (int)$process['id'], 'reset', 'Yönetici Sıfırlaması', 'btn btn-ghost btn-small', 'Bu süreç kaydı sıfırlanacak. Devam edilsin mi?'); ?></div><?php endif; ?>
             </article>
         <?php endforeach; ?>
         </section>
@@ -591,9 +614,9 @@ function render_flight_detail(array $actor): void
     <?php endif;
 }
 
-function render_process_action_form(int $flightId, int $processId, string $processAction, string $label, string $buttonClass, ?string $confirm = null): void
+function render_process_action_form(int $flightId, int $processId, string $processAction, string $label, string $buttonClass): void
 {
-    ?><form method="post" action="<?= e(url_for('/flight') . '?id=' . $flightId) ?>" data-process-form<?= $confirm !== null ? ' data-confirm="' . e($confirm) . '"' : '' ?>><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $flightId ?>"><input type="hidden" name="process_type_id" value="<?= $processId ?>"><input type="hidden" name="process_action" value="<?= e($processAction) ?>"><?= csrf_field() ?><button class="<?= e($buttonClass) ?>"><?= e($label) ?></button></form><?php
+    ?><form method="post" action="<?= e(url_for('/flight') . '?id=' . $flightId) ?>" data-process-form><input type="hidden" name="action" value="save_process"><input type="hidden" name="flight_id" value="<?= $flightId ?>"><input type="hidden" name="process_type_id" value="<?= $processId ?>"><input type="hidden" name="process_action" value="<?= e($processAction) ?>"><?= csrf_field() ?><button class="<?= e($buttonClass) ?>"><?= e($label) ?></button></form><?php
 }
 
 function render_reports(array $actor): void

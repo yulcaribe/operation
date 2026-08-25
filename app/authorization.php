@@ -71,7 +71,7 @@ final class Authorization
     public static function permissionGroups(): array
     {
         $groups = [];
-        foreach (DB::fetchAll('SELECT id, code, name, permission_group FROM permissions ORDER BY permission_group, name') as $permission) {
+        foreach (DB::fetchAll('SELECT id, code, name, permission_group FROM permissions WHERE code NOT IN ("flights.create", "processes.override") ORDER BY permission_group, name') as $permission) {
             $groups[$permission['permission_group']][] = $permission;
         }
         return $groups;
