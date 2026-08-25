@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 $operationOutputBufferStarted = false;
+$path = '';
 if (PHP_SAPI !== 'cli' && ob_get_level() === 0) {
     ob_start();
     $operationOutputBufferStarted = true;
@@ -39,10 +40,20 @@ try {
         if ((int)$user['must_change_password'] === 1) $allowedOperationPaths[] = '/profile';
         if (!in_array($path, $allowedOperationPaths, true)) redirect_to('/');
     }
+    if ($path === '/timeline/data') {
+        render_timeline_data($user);
+        exit;
+    }
     if (is_post()) handle_action($user, $path);
     render_page($user, $path, $flash);
 } catch (Throwable $error) {
     if ($operationOutputBufferStarted && ob_get_length() !== false) ob_clean();
+    if ($path === '/timeline/data') {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => friendly_error($error)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
     http_response_code(500);
     render_error($error);
 }
@@ -62,6 +73,7 @@ function handle_action(array $user, string $path): never
             '/flight' => ['start_flight', 'save_process', 'complete_flight'],
             '/imports' => ['stage_import', 'create_manual_flight'],
             '/imports/review' => ['update_import_rows', 'delete_import_rows', 'discard_import', 'commit_import'],
+            '/timeline' => ['save_timeline_defaults', 'save_timeline_rule', 'delete_timeline_rule'],
             '/profile' => ['change_password'],
         ];
         if (!in_array($action, $allowedActions[$path] ?? [], true)) throw new RuntimeException('İşlem bu sayfadan çalıştırılamaz.');
@@ -150,6 +162,18 @@ function handle_action(array $user, string $path): never
                 ImportService::commit($user, $batchId);
                 $redirect = '/imports';
                 break;
+            case 'save_timeline_defaults':
+                TimelineService::saveDefaults($user, $_POST);
+                $redirect = timeline_redirect($_POST);
+                break;
+            case 'save_timeline_rule':
+                TimelineService::saveRule($user, $_POST);
+                $redirect = timeline_redirect($_POST);
+                break;
+            case 'delete_timeline_rule':
+                TimelineService::deleteRule($user, (int)($_POST['rule_id'] ?? 0));
+                $redirect = timeline_redirect($_POST);
+                break;
             case 'change_password':
                 Auth::changePassword($user, $_POST);
                 $redirect = '/profile';
@@ -162,6 +186,24 @@ function handle_action(array $user, string $path): never
         flash('error', friendly_error($error));
     }
     redirect_to($redirect);
+}
+
+function timeline_redirect(array $data): string
+{
+    $query = ['date' => TimelineService::normalizeDate((string)($data['timeline_date'] ?? date('Y-m-d')))];
+    $airlineId = (int)($data['timeline_airline_id'] ?? $data['airline_id'] ?? 0);
+    if ($airlineId > 0) $query['airline_id'] = $airlineId;
+    return '/timeline?' . http_build_query($query) . '#timeline-rules';
+}
+
+function render_timeline_data(array $user): void
+{
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store, max-age=0');
+    echo json_encode(
+        TimelineService::data($user, (string)($_GET['date'] ?? date('Y-m-d'))),
+        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+    );
 }
 
 function render_login(?array $flash): void
@@ -220,7 +262,7 @@ function page_title(string $path): string
     return [
         '/' => 'Genel Bakış', '/users' => 'Kullanıcılar', '/users/edit' => 'Kullanıcı Düzenle', '/roles' => 'Rol ve Yetkiler',
         '/airlines' => 'Havayolları ve ICAO', '/flights' => 'Uçuşlar', '/flights/edit' => 'Uçuş Bilgileri', '/flights/assign' => 'Uçuş Atama',
-        '/imports' => 'Uçuş Ekle', '/imports/review' => 'Uçuş Ekle · Önizleme', '/flight' => 'Uçuş Operasyonu', '/reports' => 'Raporlar', '/audit' => 'İşlem Kayıtları', '/profile' => 'Profilim',
+        '/imports' => 'Uçuş Ekle', '/imports/review' => 'Uçuş Ekle · Önizleme', '/flight' => 'Uçuş Operasyonu', '/timeline' => 'Uçuş Zaman Çizelgesi', '/reports' => 'Raporlar', '/audit' => 'İşlem Kayıtları', '/profile' => 'Profilim',
     ][$path] ?? 'Operation';
 }
 
@@ -228,6 +270,7 @@ function nav_links(array $user, string $path): string
 {
     $links = ['/'=>'Genel Bakış'];
     if (can($user, 'flights.view')) $links['/flights'] = 'Uçuşlar';
+    if (can($user, 'timeline.view')) $links['/timeline'] = 'Uçuş Zaman Çizelgesi';
     if (Authorization::canAny($user, ['imports.view', 'imports.stage', 'imports.commit'])) $links['/imports'] = 'Uçuş Ekle';
     if (can($user, 'users.view')) $links['/users'] = 'Kullanıcılar';
     if (can($user, 'roles.view')) $links['/roles'] = 'Rol ve Yetkiler';
@@ -271,6 +314,7 @@ function render_route(array $user, string $path): void
             render_import_review($user);
             break;
         case '/flight': render_flight_detail($user); break;
+        case '/timeline': Authorization::require($user, 'timeline.view'); render_timeline($user); break;
         case '/reports': Authorization::require($user, 'reports.view'); render_reports($user); break;
         case '/audit': Authorization::require($user, 'audit.view'); render_audit(); break;
         case '/profile': render_profile($user); break;
@@ -292,6 +336,96 @@ function render_dashboard(array $user): void
     <section class="panel"><div class="section-heading"><div><p class="eyebrow">Canlı operasyon</p><h2>Devam eden uçuşlar</h2><p class="muted">Bu ekranda yalnızca sorumlusu tarafından başlatılmış operasyonlar görünür.</p></div></div></section>
     <?php render_flight_table($flights, $user); ?>
     <?php
+}
+
+function render_timeline(array $actor): void
+{
+    $date = TimelineService::normalizeDate((string)($_GET['date'] ?? date('Y-m-d')));
+    $dateObject = new DateTimeImmutable($date);
+    $previousDate = $dateObject->modify('-1 day')->format('Y-m-d');
+    $nextDate = $dateObject->modify('+1 day')->format('Y-m-d');
+    $today = date('Y-m-d');
+    $canManage = UserService::isAdmin((int)$actor['id']) && can($actor, 'timeline.manage');
+    ?>
+    <section class="panel timeline-intro">
+        <div class="section-heading">
+            <div><p class="eyebrow">Günlük operasyon panosu</p><h2><?= e($dateObject->format('d.m.Y')) ?></h2><p class="muted">ETA/ETD öncelikli zaman aralıkları ve canlı operasyon süreçleri. Veriler 15 saniyede bir yenilenir.</p></div>
+            <div class="timeline-legend" aria-label="Uçuş durumları"><span class="scheduled">Planlanan</span><span class="active">Devam ediyor</span><span class="completed">Tamamlanan</span><span class="cancelled">İptal</span></div>
+        </div>
+    </section>
+    <section class="panel timeline-toolbar" aria-label="Zaman çizelgesi araçları">
+        <div class="timeline-date-tools">
+            <a class="btn btn-small" href="<?= e(url_for('/timeline') . '?date=' . $previousDate) ?>" aria-label="Önceki gün">←</a>
+            <form method="get" action="<?= e(url_for('/timeline')) ?>" class="timeline-date-form"><input type="date" name="date" value="<?= e($date) ?>" aria-label="Çizelge tarihi"><button class="btn btn-small">Git</button></form>
+            <a class="btn btn-small" href="<?= e(url_for('/timeline') . '?date=' . $nextDate) ?>" aria-label="Sonraki gün">→</a>
+            <a class="btn btn-ghost btn-small" href="<?= e(url_for('/timeline') . '?date=' . $today) ?>">Bugün</a>
+        </div>
+        <div class="timeline-view-tools">
+            <button type="button" class="btn btn-ghost btn-small" data-timeline-now>Şimdiye Git</button>
+            <button type="button" class="btn btn-ghost btn-small" data-timeline-refresh>Yenile</button>
+            <span class="timeline-zoom-controls" aria-label="Yakınlaştırma">
+                <button type="button" class="btn btn-small" data-timeline-zoom-out aria-label="Uzaklaştır">−</button>
+                <span data-timeline-zoom-label>100%</span>
+                <button type="button" class="btn btn-small" data-timeline-zoom-in aria-label="Yakınlaştır">+</button>
+            </span>
+            <span class="timeline-updated" data-timeline-updated aria-live="polite">Hazırlanıyor…</span>
+        </div>
+    </section>
+    <section class="timeline-root"
+             data-timeline-root
+             data-timeline-date="<?= e($date) ?>"
+             data-timeline-data-url="<?= e(url_for('/timeline/data')) ?>"
+             data-timeline-flight-url="<?= e(url_for('/flight')) ?>">
+        <div class="panel timeline-feedback" data-timeline-feedback>Uçuşlar yükleniyor…</div>
+        <div class="timeline-scroll panel" data-timeline-scroll tabindex="0" aria-label="Günlük uçuş zaman çizelgesi">
+            <div class="timeline-canvas" data-timeline-canvas></div>
+        </div>
+        <section class="panel timeline-missing" data-timeline-missing hidden><div class="section-heading"><div><p class="eyebrow">Kontrol gerekli</p><h2>Zaman bilgisi eksik uçuşlar</h2></div></div><div class="timeline-missing-list" data-timeline-missing-list></div></section>
+    </section>
+
+    <?php if ($canManage):
+        $settings = TimelineService::settings();
+        $airlines = DB::fetchAll('SELECT id, icao_code, name FROM airlines WHERE status = "active" ORDER BY icao_code');
+        $selectedAirlineId = (int)($_GET['airline_id'] ?? ($airlines[0]['id'] ?? 0));
+        $validAirlineIds = array_map('intval', array_column($airlines, 'id'));
+        if (!in_array($selectedAirlineId, $validAirlineIds, true)) $selectedAirlineId = (int)($airlines[0]['id'] ?? 0);
+        $rules = $selectedAirlineId > 0 ? TimelineService::ruleRows($actor, $selectedAirlineId) : [];
+        ?>
+        <section class="panel timeline-rules" id="timeline-rules">
+            <div class="section-heading"><div><p class="eyebrow">Admin ayarları</p><h2>Süre Kuralları</h2><p class="muted">Firma ve uçak tipi kuralı bulunamazsa global süreler kullanılır. Değişiklikler çizelgeye anında yansır.</p></div></div>
+            <form method="post" class="timeline-default-form">
+                <input type="hidden" name="action" value="save_timeline_defaults"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="timeline_airline_id" value="<?= $selectedAirlineId ?>"><?= csrf_field() ?>
+                <label>Global Arrival süresi<input type="number" name="default_arrival_minutes" min="5" max="720" value="<?= (int)$settings['default_arrival_minutes'] ?>" required><small>Dakika · ETA/STA sonrasına eklenir</small></label>
+                <label>Global Departure süresi<input type="number" name="default_departure_minutes" min="5" max="720" value="<?= (int)$settings['default_departure_minutes'] ?>" required><small>Dakika · ETD/STD öncesinden başlar</small></label>
+                <button class="btn btn-primary">Global Süreleri Kaydet</button>
+            </form>
+            <?php if ($airlines): ?>
+                <form method="get" action="<?= e(url_for('/timeline')) ?>" class="timeline-airline-picker"><input type="hidden" name="date" value="<?= e($date) ?>"><label>Firma<select name="airline_id"><?php options_rows($airlines, $selectedAirlineId, 'icao_code', 'name'); ?></select></label><button class="btn">Kuralları Göster</button></form>
+                <div class="timeline-rule-list">
+                    <?php foreach ($rules as $rule): ?>
+                        <div class="timeline-rule-row">
+                            <form method="post" class="timeline-rule-form">
+                                <input type="hidden" name="action" value="save_timeline_rule"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="timeline_airline_id" value="<?= $selectedAirlineId ?>"><input type="hidden" name="airline_id" value="<?= $selectedAirlineId ?>"><input type="hidden" name="aircraft_type" value="<?= e($rule['aircraft_type']) ?>"><?= csrf_field() ?>
+                                <label>Uçak tipi<input value="<?= e($rule['aircraft_type']) ?>" disabled><?php if (!$rule['has_rule']): ?><small>Şu an global varsayılanı kullanıyor</small><?php endif; ?></label>
+                                <label>Arrival dk<input type="number" name="arrival_minutes" min="5" max="720" value="<?= (int)$rule['arrival_minutes'] ?>" required></label>
+                                <label>Departure dk<input type="number" name="departure_minutes" min="5" max="720" value="<?= (int)$rule['departure_minutes'] ?>" required></label>
+                                <button class="btn btn-small btn-primary"><?= $rule['has_rule'] ? 'Güncelle' : 'Kural Oluştur' ?></button>
+                            </form>
+                            <?php if ($rule['has_rule']): ?><form method="post" data-confirm="Bu uçak tipi kuralı silinecek ve global varsayılan kullanılacak. Devam edilsin mi?"><input type="hidden" name="action" value="delete_timeline_rule"><input type="hidden" name="rule_id" value="<?= (int)$rule['id'] ?>"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="timeline_airline_id" value="<?= $selectedAirlineId ?>"><?= csrf_field() ?><button class="btn btn-danger btn-small">Sil</button></form><?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                    <?php if (!$rules): ?><div class="empty">Bu firma için sistemde uçak tipi bulunamadı. Aşağıdan manuel ekleyebilirsiniz.</div><?php endif; ?>
+                </div>
+                <form method="post" class="timeline-rule-form timeline-rule-new">
+                    <input type="hidden" name="action" value="save_timeline_rule"><input type="hidden" name="timeline_date" value="<?= e($date) ?>"><input type="hidden" name="timeline_airline_id" value="<?= $selectedAirlineId ?>"><input type="hidden" name="airline_id" value="<?= $selectedAirlineId ?>"><?= csrf_field() ?>
+                    <label>Yeni uçak tipi<input name="aircraft_type" maxlength="20" placeholder="Örn. A320" required></label>
+                    <label>Arrival dk<input type="number" name="arrival_minutes" min="5" max="720" value="<?= (int)$settings['default_arrival_minutes'] ?>" required></label>
+                    <label>Departure dk<input type="number" name="departure_minutes" min="5" max="720" value="<?= (int)$settings['default_departure_minutes'] ?>" required></label>
+                    <button class="btn btn-success">Yeni Kural Ekle</button>
+                </form>
+            <?php else: ?><div class="notice">Süre kuralı tanımlamak için önce aktif bir havayolu ekleyin.</div><?php endif; ?>
+        </section>
+    <?php endif;
 }
 
 function render_operation_home(array $user): void

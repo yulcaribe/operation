@@ -192,6 +192,31 @@ CREATE TABLE IF NOT EXISTS flight_processes (
     CONSTRAINT fk_flight_processes_updated_by FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS flight_timeline_settings (
+    id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+    default_arrival_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 40,
+    default_departure_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 60,
+    updated_by BIGINT UNSIGNED NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_flight_timeline_settings_user FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS flight_timeline_rules (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    airline_id BIGINT UNSIGNED NOT NULL,
+    aircraft_type VARCHAR(20) NOT NULL,
+    arrival_minutes SMALLINT UNSIGNED NOT NULL,
+    departure_minutes SMALLINT UNSIGNED NOT NULL,
+    created_by BIGINT UNSIGNED NULL,
+    updated_by BIGINT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_flight_timeline_rules_airline_aircraft (airline_id, aircraft_type),
+    CONSTRAINT fk_flight_timeline_rules_airline FOREIGN KEY (airline_id) REFERENCES airlines(id) ON DELETE CASCADE,
+    CONSTRAINT fk_flight_timeline_rules_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT fk_flight_timeline_rules_updated_by FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS flight_import_batches (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     file_name VARCHAR(255) NOT NULL,
@@ -268,6 +293,8 @@ INSERT INTO permissions (code, name, permission_group, description) VALUES
     ('imports.commit', 'Uçuş Kaydetme', 'Uçuş Ekle', 'Excel önizlemesini onaylar veya Uçuş Ekle sayfasından manuel uçuş kaydeder'),
     ('processes.view', 'Süreç Görüntüleme', 'Operasyon Süreçleri', 'Uçuş operasyon süreçlerini görüntüler'),
     ('processes.update', 'Süreç Güncelleme', 'Operasyon Süreçleri', 'Süreç başlangıç, bitiş ve notlarını günceller'),
+    ('timeline.view', 'Uçuş Zaman Çizelgesini Görüntüleme', 'Uçuş Zaman Çizelgesi', 'Global veya ICAO kapsamındaki günlük operasyon çizelgesini görüntüler'),
+    ('timeline.manage', 'Zaman Çizelgesi Sürelerini Yönetme', 'Uçuş Zaman Çizelgesi', 'Global ve firma/uçak tipi görev sürelerini yönetir'),
     ('reports.view', 'Rapor Görüntüleme', 'Raporlar', 'Yetki kapsamındaki operasyon raporlarını görüntüler'),
     ('audit.view', 'Denetim Kaydı Görüntüleme', 'Sistem', 'Sistem değişiklik geçmişini görüntüler')
 ON DUPLICATE KEY UPDATE name = VALUES(name), permission_group = VALUES(permission_group), description = VALUES(description);
@@ -277,7 +304,7 @@ SELECT r.id, p.id FROM roles r CROSS JOIN permissions p WHERE r.code = 'admin';
 
 INSERT IGNORE INTO role_permissions (role_id, permission_id)
 SELECT r.id, p.id FROM roles r JOIN permissions p
-    ON p.code IN ('dashboard.view', 'flights.view', 'processes.view', 'reports.view')
+    ON p.code IN ('dashboard.view', 'flights.view', 'processes.view', 'timeline.view', 'reports.view')
 WHERE r.code = 'supervisor';
 
 INSERT IGNORE INTO role_permissions (role_id, permission_id)
@@ -296,18 +323,21 @@ INSERT INTO flight_types (code, name, status) VALUES
 ON DUPLICATE KEY UPDATE name = VALUES(name), status = VALUES(status);
 
 -- Başlangıç operasyon süreçleri
-INSERT INTO process_types (code, name, input_type, status) VALUES
-    ('inblock', 'In Block', 'datetime', 'active'),
-    ('doors_open', 'Doors Open', 'datetime', 'active'),
-    ('deboarding', 'Deboarding', 'state', 'active'),
-    ('cleaning', 'Cleaning', 'state', 'active'),
-    ('catering', 'Catering', 'state', 'active'),
-    ('fueling', 'Fueling', 'state', 'active'),
-    ('boarding', 'Boarding', 'state', 'active'),
-    ('doors_closed', 'Doors Closed', 'datetime', 'active'),
-    ('offblock', 'Off Block', 'datetime', 'active'),
-    ('operation_note', 'Operation Note', 'text', 'active')
-ON DUPLICATE KEY UPDATE name = VALUES(name), input_type = VALUES(input_type), status = VALUES(status);
+INSERT INTO process_types (code, name, input_type, icon, status) VALUES
+    ('inblock', 'In Block', 'datetime', 'inblock', 'active'),
+    ('doors_open', 'Doors Open', 'datetime', 'door-open', 'active'),
+    ('deboarding', 'Deboarding', 'state', 'deboarding', 'active'),
+    ('cleaning', 'Cleaning', 'state', 'cleaning', 'active'),
+    ('catering', 'Catering', 'state', 'catering', 'active'),
+    ('fueling', 'Fueling', 'state', 'fueling', 'active'),
+    ('boarding', 'Boarding', 'state', 'boarding', 'active'),
+    ('doors_closed', 'Doors Closed', 'datetime', 'door-closed', 'active'),
+    ('offblock', 'Off Block', 'datetime', 'offblock', 'active'),
+    ('operation_note', 'Operation Note', 'text', 'note', 'active')
+ON DUPLICATE KEY UPDATE name = VALUES(name), input_type = VALUES(input_type), icon = VALUES(icon), status = VALUES(status);
+
+INSERT IGNORE INTO flight_timeline_settings (id, default_arrival_minutes, default_departure_minutes)
+VALUES (1, 40, 60);
 
 INSERT IGNORE INTO flight_type_process_map (flight_type_id, process_type_id, order_no, required)
 SELECT ft.id, pt.id, FIELD(pt.code, 'inblock', 'doors_open', 'deboarding', 'operation_note'), IF(pt.code IN ('inblock', 'doors_open'), 1, 0)

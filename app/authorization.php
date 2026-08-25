@@ -71,7 +71,7 @@ final class Authorization
     public static function permissionGroups(): array
     {
         $groups = [];
-        foreach (DB::fetchAll('SELECT id, code, name, permission_group FROM permissions WHERE code NOT IN ("flights.create", "processes.override") ORDER BY permission_group, name') as $permission) {
+        foreach (DB::fetchAll('SELECT id, code, name, permission_group FROM permissions WHERE code NOT IN ("flights.create", "processes.override", "timeline.manage") ORDER BY permission_group, name') as $permission) {
             $groups[$permission['permission_group']][] = $permission;
         }
         return $groups;
@@ -89,6 +89,8 @@ final class Authorization
         if (!$role || $role['code'] === 'admin') throw new RuntimeException('Admin rolünün tüm yetkileri kilitlidir.');
         $valid = array_map('intval', array_column(DB::fetchAll('SELECT id FROM permissions'), 'id'));
         $permissionIds = array_values(array_unique(array_intersect(array_map('intval', $permissionIds), $valid)));
+        $adminOnly = DB::fetch('SELECT id FROM permissions WHERE code = "timeline.manage"');
+        if ($adminOnly) $permissionIds = array_values(array_diff($permissionIds, [(int)$adminOnly['id']]));
         $dashboard = DB::fetch('SELECT id FROM permissions WHERE code = "dashboard.view"');
         if ($dashboard) $permissionIds[] = (int)$dashboard['id'];
         $permissionIds = array_values(array_unique($permissionIds));

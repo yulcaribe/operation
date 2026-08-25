@@ -125,6 +125,9 @@ function friendly_error(Throwable $error): string
 {
     $message = $error->getMessage();
     if (str_contains($message, 'Access denied')) return 'Veritabanı kullanıcı adı, şifresi veya yetkisi hatalı.';
+    if (str_contains($message, 'flight_timeline_settings') || str_contains($message, 'flight_timeline_rules')) {
+        return 'Uçuş Zaman Çizelgesi migration’ı eksik. Yalnızca database/migrations/001_flight_timeline.sql dosyasını bir kez içe aktarın.';
+    }
     if (str_contains($message, "doesn't exist") || str_contains($message, 'Unknown table')) return 'Veritabanı şeması eksik. database/schema.sql dosyasını içe aktarın.';
     if (str_contains($message, 'Duplicate entry')) return 'Aynı benzersiz bilgiyle kayıt zaten mevcut.';
     if ($error instanceof DatabaseException) {

@@ -558,6 +558,328 @@ final class ProcessService
     }
 }
 
+final class TimelineService
+{
+    private const MIN_DURATION = 5;
+    private const MAX_DURATION = 720;
+
+    public static function normalizeDate(string $value): string
+    {
+        $value = trim($value);
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        return $date instanceof DateTimeImmutable && $date->format('Y-m-d') === $value ? $value : date('Y-m-d');
+    }
+
+    public static function settings(): array
+    {
+        $settings = DB::fetch('SELECT default_arrival_minutes, default_departure_minutes FROM flight_timeline_settings WHERE id = 1');
+        return [
+            'default_arrival_minutes' => (int)($settings['default_arrival_minutes'] ?? 40),
+            'default_departure_minutes' => (int)($settings['default_departure_minutes'] ?? 60),
+        ];
+    }
+
+    public static function saveDefaults(array $actor, array $data): void
+    {
+        self::requireManager($actor);
+        $arrival = self::duration($data['default_arrival_minutes'] ?? 40);
+        $departure = self::duration($data['default_departure_minutes'] ?? 60);
+        DB::execute(
+            'INSERT INTO flight_timeline_settings (id, default_arrival_minutes, default_departure_minutes, updated_by)
+             VALUES (1, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE default_arrival_minutes = VALUES(default_arrival_minutes), default_departure_minutes = VALUES(default_departure_minutes), updated_by = VALUES(updated_by)',
+            [$arrival, $departure, (int)$actor['id']]
+        );
+        Audit::record((int)$actor['id'], 'timeline.defaults_updated', 'flight_timeline_settings', 1, [
+            'arrival_minutes' => $arrival,
+            'departure_minutes' => $departure,
+        ]);
+    }
+
+    public static function ruleRows(array $actor, int $airlineId): array
+    {
+        self::requireManager($actor);
+        if (!DB::fetch('SELECT id FROM airlines WHERE id = ?', [$airlineId])) throw new RuntimeException('Havayolu bulunamadı.');
+        $settings = self::settings();
+        $types = DB::fetchAll(
+            'SELECT aircraft_type FROM flights WHERE airline_id = ? AND deleted_at IS NULL AND aircraft_type IS NOT NULL AND TRIM(aircraft_type) != ""
+             UNION
+             SELECT aircraft_type FROM flight_timeline_rules WHERE airline_id = ?
+             ORDER BY aircraft_type',
+            [$airlineId, $airlineId]
+        );
+        $rules = DB::fetchAll('SELECT id, aircraft_type, arrival_minutes, departure_minutes FROM flight_timeline_rules WHERE airline_id = ?', [$airlineId]);
+        $rulesByType = [];
+        foreach ($rules as $rule) $rulesByType[strtoupper(trim((string)$rule['aircraft_type']))] = $rule;
+        $rows = [];
+        foreach ($types as $typeRow) {
+            $aircraftType = strtoupper(trim((string)$typeRow['aircraft_type']));
+            if ($aircraftType === '') continue;
+            $rule = $rulesByType[$aircraftType] ?? null;
+            $rows[] = [
+                'id' => (int)($rule['id'] ?? 0),
+                'aircraft_type' => $aircraftType,
+                'arrival_minutes' => (int)($rule['arrival_minutes'] ?? $settings['default_arrival_minutes']),
+                'departure_minutes' => (int)($rule['departure_minutes'] ?? $settings['default_departure_minutes']),
+                'has_rule' => $rule !== null,
+            ];
+        }
+        return $rows;
+    }
+
+    public static function saveRule(array $actor, array $data): void
+    {
+        self::requireManager($actor);
+        $airlineId = (int)($data['airline_id'] ?? 0);
+        if (!DB::fetch('SELECT id FROM airlines WHERE id = ? AND status = "active"', [$airlineId])) throw new RuntimeException('Aktif havayolu bulunamadı.');
+        $aircraftType = strtoupper(trim((string)($data['aircraft_type'] ?? '')));
+        if ($aircraftType === '' || strlen($aircraftType) > 20) throw new RuntimeException('Uçak tipi 1-20 karakter olmalıdır.');
+        $arrival = self::duration($data['arrival_minutes'] ?? 40);
+        $departure = self::duration($data['departure_minutes'] ?? 60);
+        DB::execute(
+            'INSERT INTO flight_timeline_rules (airline_id, aircraft_type, arrival_minutes, departure_minutes, created_by, updated_by)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE arrival_minutes = VALUES(arrival_minutes), departure_minutes = VALUES(departure_minutes), updated_by = VALUES(updated_by)',
+            [$airlineId, $aircraftType, $arrival, $departure, (int)$actor['id'], (int)$actor['id']]
+        );
+        $rule = DB::fetch('SELECT id FROM flight_timeline_rules WHERE airline_id = ? AND aircraft_type = ?', [$airlineId, $aircraftType]);
+        Audit::record((int)$actor['id'], 'timeline.rule_saved', 'flight_timeline_rule', (int)($rule['id'] ?? 0), [
+            'airline_id' => $airlineId,
+            'aircraft_type' => $aircraftType,
+            'arrival_minutes' => $arrival,
+            'departure_minutes' => $departure,
+        ]);
+    }
+
+    public static function deleteRule(array $actor, int $ruleId): void
+    {
+        self::requireManager($actor);
+        $rule = DB::fetch('SELECT * FROM flight_timeline_rules WHERE id = ?', [$ruleId]);
+        if (!$rule) throw new RuntimeException('Silinecek süre kuralı bulunamadı.');
+        DB::execute('DELETE FROM flight_timeline_rules WHERE id = ?', [$ruleId]);
+        Audit::record((int)$actor['id'], 'timeline.rule_deleted', 'flight_timeline_rule', $ruleId, [
+            'airline_id' => (int)$rule['airline_id'],
+            'aircraft_type' => $rule['aircraft_type'],
+        ]);
+    }
+
+    public static function data(array $actor, string $requestedDate): array
+    {
+        Authorization::require($actor, 'timeline.view');
+        $date = self::normalizeDate($requestedDate);
+        $dayStart = new DateTimeImmutable($date . ' 00:00:00');
+        $dayEnd = $dayStart->modify('+1 day');
+        $searchStart = $dayStart->modify('-1 day')->format('Y-m-d H:i:s');
+        $searchEnd = $dayEnd->modify('+1 day')->format('Y-m-d H:i:s');
+        $settings = self::settings();
+        $ruleRows = DB::fetchAll('SELECT airline_id, aircraft_type, arrival_minutes, departure_minutes FROM flight_timeline_rules');
+        $rules = [];
+        foreach ($ruleRows as $rule) {
+            $key = (int)$rule['airline_id'] . '|' . strtoupper(trim((string)$rule['aircraft_type']));
+            $rules[$key] = [(int)$rule['arrival_minutes'], (int)$rule['departure_minutes']];
+        }
+
+        $candidates = DB::fetchAll(
+            'SELECT f.*, a.name AS airline_name, a.icao_code, ft.code AS flight_type_code, ft.name AS flight_type_name,
+                    (SELECT CONCAT(u.first_name, " ", u.last_name)
+                     FROM flight_assignments fa JOIN users u ON u.id = fa.user_id
+                     WHERE fa.flight_id = f.id AND fa.status IN ("active", "completed")
+                     ORDER BY fa.id DESC LIMIT 1) AS assignee_name
+             FROM flights f
+             JOIN airlines a ON a.id = f.airline_id
+             JOIN flight_types ft ON ft.id = f.flight_type_id
+             WHERE f.deleted_at IS NULL AND (
+                (COALESCE(f.estimated_arrival_at, f.scheduled_arrival_at) >= ? AND COALESCE(f.estimated_arrival_at, f.scheduled_arrival_at) < ?)
+                OR (COALESCE(f.estimated_departure_at, f.scheduled_departure_at) >= ? AND COALESCE(f.estimated_departure_at, f.scheduled_departure_at) < ?)
+             )',
+            [$searchStart, $searchEnd, $searchStart, $searchEnd]
+        );
+
+        $flights = [];
+        $missing = [];
+        foreach ($candidates as $flight) {
+            $context = FlightService::context($flight);
+            if (!can($actor, 'timeline.view', $context)) continue;
+            $aircraftType = strtoupper(trim((string)($flight['aircraft_type'] ?? '')));
+            [$arrivalMinutes, $departureMinutes] = $rules[(int)$flight['airline_id'] . '|' . $aircraftType]
+                ?? [$settings['default_arrival_minutes'], $settings['default_departure_minutes']];
+            $arrivalAt = self::dateTime($flight['estimated_arrival_at'] ?: $flight['scheduled_arrival_at']);
+            $departureAt = self::dateTime($flight['estimated_departure_at'] ?: $flight['scheduled_departure_at']);
+            [$startAt, $endAt] = self::window((string)$flight['flight_type_code'], $arrivalAt, $departureAt, $arrivalMinutes, $departureMinutes);
+            $item = self::flightItem($flight, $arrivalMinutes, $departureMinutes);
+            if (!$startAt || !$endAt) {
+                $anchor = $arrivalAt ?: $departureAt;
+                if ($anchor && $anchor->format('Y-m-d') === $date) {
+                    $item['missing_reason'] = 'Uçuş tipi için gerekli ETA/STA veya ETD/STD bilgisi eksik.';
+                    $missing[] = $item;
+                }
+                continue;
+            }
+            if ($startAt >= $dayEnd || $endAt <= $dayStart) continue;
+            $clippedStart = $startAt < $dayStart ? $dayStart : $startAt;
+            $clippedEnd = $endAt > $dayEnd ? $dayEnd : $endAt;
+            $item['start_at'] = $startAt->format(DATE_ATOM);
+            $item['end_at'] = $endAt->format(DATE_ATOM);
+            $item['start_label'] = $startAt->format('H:i');
+            $item['end_label'] = $endAt->format('H:i');
+            $item['start_minute'] = ($clippedStart->getTimestamp() - $dayStart->getTimestamp()) / 60;
+            $item['duration_minutes'] = max(1, ($clippedEnd->getTimestamp() - $clippedStart->getTimestamp()) / 60);
+            $item['continues_before'] = $startAt < $dayStart;
+            $item['continues_after'] = $endAt > $dayEnd;
+            $item['sort_timestamp'] = $startAt->getTimestamp();
+            $flights[] = $item;
+        }
+
+        $allItems = array_merge($flights, $missing);
+        $processesByFlight = self::processes(array_map(static fn(array $flight): int => (int)$flight['id'], $allItems));
+        foreach ($flights as &$flight) $flight['processes'] = $processesByFlight[(int)$flight['id']] ?? [];
+        unset($flight);
+        foreach ($missing as &$flight) $flight['processes'] = $processesByFlight[(int)$flight['id']] ?? [];
+        unset($flight);
+
+        usort($flights, static function (array $left, array $right): int {
+            $icaoOrder = strcmp((string)$left['icao_code'], (string)$right['icao_code']);
+            if ($icaoOrder !== 0) return $icaoOrder;
+            $timeOrder = (int)$left['sort_timestamp'] <=> (int)$right['sort_timestamp'];
+            return $timeOrder !== 0 ? $timeOrder : (int)$left['id'] <=> (int)$right['id'];
+        });
+        usort($missing, static function (array $left, array $right): int {
+            $icaoOrder = strcmp((string)$left['icao_code'], (string)$right['icao_code']);
+            return $icaoOrder !== 0 ? $icaoOrder : (int)$left['id'] <=> (int)$right['id'];
+        });
+        $groups = [];
+        foreach ($flights as $flight) {
+            $icao = (string)$flight['icao_code'];
+            if (!isset($groups[$icao])) $groups[$icao] = ['icao_code' => $icao, 'airline_name' => $flight['airline_name'], 'flights' => []];
+            unset($flight['sort_timestamp']);
+            $groups[$icao]['flights'][] = $flight;
+        }
+
+        $today = date('Y-m-d');
+        $nowMinute = null;
+        if ($date === $today) {
+            $now = new DateTimeImmutable();
+            $nowMinute = ($now->getTimestamp() - $dayStart->getTimestamp()) / 60;
+        }
+        return [
+            'date' => $date,
+            'generated_at' => date(DATE_ATOM),
+            'now_minute' => $nowMinute,
+            'groups' => array_values($groups),
+            'missing' => $missing,
+            'totals' => ['flights' => count($flights), 'missing' => count($missing)],
+        ];
+    }
+
+    private static function duration(mixed $value): int
+    {
+        $minutes = (int)$value;
+        if ($minutes < self::MIN_DURATION || $minutes > self::MAX_DURATION) {
+            throw new RuntimeException('Görev süresi 5 ile 720 dakika arasında olmalıdır.');
+        }
+        return $minutes;
+    }
+
+    private static function requireManager(array $actor): void
+    {
+        Authorization::require($actor, 'timeline.manage');
+        if (!UserService::isAdmin((int)$actor['id'])) throw new RuntimeException('Süre kurallarını yalnızca admin yönetebilir.');
+    }
+
+    private static function dateTime(mixed $value): ?DateTimeImmutable
+    {
+        if (!$value) return null;
+        try { return new DateTimeImmutable((string)$value); }
+        catch (Throwable) { return null; }
+    }
+
+    private static function window(string $flightType, ?DateTimeImmutable $arrivalAt, ?DateTimeImmutable $departureAt, int $arrivalMinutes, int $departureMinutes): array
+    {
+        if ($flightType === 'arrival' && $arrivalAt) return [$arrivalAt, $arrivalAt->modify('+' . $arrivalMinutes . ' minutes')];
+        if ($flightType === 'departure' && $departureAt) return [$departureAt->modify('-' . $departureMinutes . ' minutes'), $departureAt];
+        if ($flightType === 'turnaround' && $arrivalAt && $departureAt) {
+            $departureStart = $departureAt->modify('-' . $departureMinutes . ' minutes');
+            $arrivalEnd = $arrivalAt->modify('+' . $arrivalMinutes . ' minutes');
+            return [$arrivalAt < $departureStart ? $arrivalAt : $departureStart, $arrivalEnd > $departureAt ? $arrivalEnd : $departureAt];
+        }
+        return [null, null];
+    }
+
+    private static function flightItem(array $flight, int $arrivalMinutes, int $departureMinutes): array
+    {
+        return [
+            'id' => (int)$flight['id'],
+            'airline_id' => (int)$flight['airline_id'],
+            'airline_name' => (string)$flight['airline_name'],
+            'icao_code' => (string)$flight['icao_code'],
+            'flight_type_code' => (string)$flight['flight_type_code'],
+            'flight_type_name' => (string)$flight['flight_type_name'],
+            'arrival_flight_number' => $flight['arrival_flight_number'],
+            'departure_flight_number' => $flight['departure_flight_number'],
+            'arrival_origin' => $flight['arrival_origin'],
+            'departure_destination' => $flight['departure_destination'],
+            'tail_number' => $flight['tail_number'],
+            'aircraft_type' => $flight['aircraft_type'],
+            'stand' => $flight['stand'],
+            'status' => (string)$flight['status'],
+            'assignee_name' => $flight['assignee_name'],
+            'scheduled_arrival_at' => $flight['scheduled_arrival_at'],
+            'estimated_arrival_at' => $flight['estimated_arrival_at'],
+            'scheduled_departure_at' => $flight['scheduled_departure_at'],
+            'estimated_departure_at' => $flight['estimated_departure_at'],
+            'arrival_minutes' => $arrivalMinutes,
+            'departure_minutes' => $departureMinutes,
+        ];
+    }
+
+    private static function processes(array $flightIds): array
+    {
+        $flightIds = array_values(array_unique(array_filter(array_map('intval', $flightIds))));
+        if (!$flightIds) return [];
+        $placeholders = implode(', ', array_fill(0, count($flightIds), '?'));
+        $rows = DB::fetchAll(
+            'SELECT f.id AS flight_id, pt.code, pt.name, pt.icon, pt.input_type, m.order_no,
+                    COALESCE(fp.state, "not_started") AS state, fp.started_at, fp.finished_at, fp.value_datetime, fp.updated_at AS recorded_at,
+                    CASE WHEN fp.value_text IS NOT NULL AND TRIM(fp.value_text) != "" THEN 1 ELSE 0 END AS has_text
+             FROM flights f
+             JOIN flight_type_process_map m ON m.flight_type_id = f.flight_type_id
+             JOIN process_types pt ON pt.id = m.process_type_id AND pt.status = "active"
+             LEFT JOIN flight_processes fp ON fp.flight_id = f.id AND fp.process_type_id = pt.id
+             WHERE f.id IN (' . $placeholders . ')
+             ORDER BY f.id, m.order_no, pt.id',
+            $flightIds
+        );
+        $allowedIcons = ['inblock', 'door-open', 'deboarding', 'cleaning', 'catering', 'fueling', 'boarding', 'door-closed', 'offblock', 'note'];
+        $result = [];
+        foreach ($rows as $row) {
+            $icon = (string)($row['icon'] ?: self::fallbackIcon((string)$row['code']));
+            if (!in_array($icon, $allowedIcons, true)) $icon = 'note';
+            $result[(int)$row['flight_id']][] = [
+                'code' => (string)$row['code'],
+                'name' => (string)$row['name'],
+                'icon' => $icon,
+                'state' => (string)$row['state'],
+                'started_at' => $row['started_at'],
+                'finished_at' => $row['finished_at'],
+                'value_datetime' => $row['value_datetime'],
+                'recorded_at' => $row['recorded_at'],
+                'has_text' => (bool)$row['has_text'],
+            ];
+        }
+        return $result;
+    }
+
+    private static function fallbackIcon(string $code): string
+    {
+        return [
+            'inblock' => 'inblock', 'doors_open' => 'door-open', 'deboarding' => 'deboarding',
+            'cleaning' => 'cleaning', 'catering' => 'catering', 'fueling' => 'fueling',
+            'boarding' => 'boarding', 'doors_closed' => 'door-closed', 'offblock' => 'offblock',
+            'operation_note' => 'note',
+        ][$code] ?? 'note';
+    }
+}
+
 final class ImportService
 {
     private const MAX_ROWS = 2000;
