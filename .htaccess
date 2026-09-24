@@ -1,5 +1,9 @@
 Options -Indexes
 
+<IfModule mod_headers.c>
+    Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+</IfModule>
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteRule ^(?:\.git|\.github|app|database|docs|scripts|storage)(?:/|$) - [R=404,L]
