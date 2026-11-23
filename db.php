@@ -1,8 +1,8 @@
 <?php
 $servername = "localhost";
-$username = "yulcarib_ops";
+$username = "yulcari1_ops";
 $password = "37725292Ops.";
-$dbname = "yulcarib_ops";
+$dbname = "yulcari1_ops";
 
 // MySQL bağlantısını oluştur
 $conn = new mysqli($servername, $username, $password, $dbname);
