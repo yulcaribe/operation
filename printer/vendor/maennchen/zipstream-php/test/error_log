@@ -1,0 +1,102 @@
+[12-Dec-2025 00:50:55 UTC] PHP Warning:  require(/home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php on line 7
+[12-Dec-2025 00:50:55 UTC] PHP Warning:  require(/home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php on line 7
+[12-Dec-2025 00:50:55 UTC] PHP Fatal error:  Uncaught Error: Failed opening required '/home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/../vendor/autoload.php' (include_path='.:/opt/alt/php83/usr/share/pear:/opt/alt/php83/usr/share/php:/usr/share/pear:/usr/share/php') in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php:7
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php on line 7
+[12-Dec-2025 02:03:26 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/EndOfCentralDirectoryTest.php:10
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/EndOfCentralDirectoryTest.php on line 10
+[12-Dec-2025 02:07:13 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/LocalFileHeaderTest.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/LocalFileHeaderTest.php on line 12
+[12-Dec-2025 02:12:38 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/DataDescriptorTest.php:10
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/DataDescriptorTest.php on line 10
+[12-Dec-2025 02:13:25 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/CentralDirectoryFileHeaderTest.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/CentralDirectoryFileHeaderTest.php on line 12
+[12-Dec-2025 02:19:29 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/TimeTest.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/TimeTest.php on line 12
+[12-Dec-2025 02:24:22 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/PackFieldTest.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/PackFieldTest.php on line 11
+[12-Dec-2025 02:37:26 UTC] PHP Warning:  require(/home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php on line 7
+[12-Dec-2025 02:37:26 UTC] PHP Warning:  require(/home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php on line 7
+[12-Dec-2025 02:37:26 UTC] PHP Fatal error:  Uncaught Error: Failed opening required '/home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/../vendor/autoload.php' (include_path='.:/opt/alt/php83/usr/share/pear:/opt/alt/php83/usr/share/php:/usr/share/pear:/usr/share/php') in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php:7
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php on line 7
+[12-Dec-2025 02:38:31 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/EndOfCentralDirectoryTest.php:10
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/EndOfCentralDirectoryTest.php on line 10
+[12-Dec-2025 02:39:35 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/LocalFileHeaderTest.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/LocalFileHeaderTest.php on line 12
+[12-Dec-2025 02:40:36 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/DataDescriptorTest.php:10
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/DataDescriptorTest.php on line 10
+[12-Dec-2025 02:41:42 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/CentralDirectoryFileHeaderTest.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/CentralDirectoryFileHeaderTest.php on line 12
+[12-Dec-2025 02:42:42 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/TimeTest.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/TimeTest.php on line 12
+[12-Dec-2025 02:43:48 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/PackFieldTest.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/PackFieldTest.php on line 11
+[12-Dec-2025 02:52:00 UTC] PHP Warning:  require(/home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php on line 7
+[12-Dec-2025 02:52:00 UTC] PHP Warning:  require(/home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php on line 7
+[12-Dec-2025 02:52:00 UTC] PHP Fatal error:  Uncaught Error: Failed opening required '/home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/../vendor/autoload.php' (include_path='.:/opt/alt/php83/usr/share/pear:/opt/alt/php83/usr/share/php:/usr/share/pear:/usr/share/php') in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php:7
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/bootstrap.php on line 7
+[12-Dec-2025 02:52:21 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/EndOfCentralDirectoryTest.php:10
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/EndOfCentralDirectoryTest.php on line 10
+[12-Dec-2025 02:53:20 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/LocalFileHeaderTest.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/LocalFileHeaderTest.php on line 12
+[12-Dec-2025 02:54:23 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/DataDescriptorTest.php:10
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/DataDescriptorTest.php on line 10
+[12-Dec-2025 02:55:23 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/CentralDirectoryFileHeaderTest.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/CentralDirectoryFileHeaderTest.php on line 12
+[12-Dec-2025 02:56:26 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/TimeTest.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/TimeTest.php on line 12
+[12-Dec-2025 03:13:42 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/PackFieldTest.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/PackFieldTest.php on line 11
+[12-Dec-2025 03:35:39 UTC] PHP Fatal error:  Uncaught Error: Interface "Psr\Http\Message\StreamInterface" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/EndlessCycleStream.php:10
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/EndlessCycleStream.php on line 10
+[12-Dec-2025 03:35:55 UTC] PHP Fatal error:  Uncaught Error: Class "PHPUnit\Framework\TestCase" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/ZipStreamTest.php:28
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/ZipStreamTest.php on line 28
+[12-Dec-2025 03:36:41 UTC] PHP Fatal error:  Uncaught Error: Interface "Psr\Http\Message\StreamInterface" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/ResourceStream.php:13
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/test/ResourceStream.php on line 13

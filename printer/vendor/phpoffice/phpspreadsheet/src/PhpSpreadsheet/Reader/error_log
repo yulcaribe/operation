@@ -1,0 +1,48 @@
+[12-Dec-2025 03:56:37 UTC] PHP Fatal error:  Uncaught Error: Interface "PhpOffice\PhpSpreadsheet\Reader\IReader" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/BaseReader.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/BaseReader.php on line 12
+[12-Dec-2025 03:56:40 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Exception" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Exception.php:7
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Exception.php on line 7
+[12-Dec-2025 04:00:59 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Reader\BaseReader" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/XlsBase.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/XlsBase.php on line 12
+[12-Dec-2025 04:07:34 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Reader\BaseReader" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Gnumeric.php:20
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Gnumeric.php on line 20
+[12-Dec-2025 04:17:17 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Reader\BaseReader" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Ods.php:30
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Ods.php on line 30
+[12-Dec-2025 04:21:33 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Reader\BaseReader" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Slk.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Slk.php on line 15
+[12-Dec-2025 04:24:19 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Reader\BaseReader" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Xlsx.php:48
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Xlsx.php on line 48
+[12-Dec-2025 04:26:15 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Reader\BaseReader" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Xml.php:30
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Xml.php on line 30
+[12-Dec-2025 04:31:15 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Reader\BaseReader" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Html.php:31
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Html.php on line 31
+[12-Dec-2025 04:32:12 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Reader\BaseReader" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Csv.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Csv.php on line 15
+[12-Dec-2025 04:33:15 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Reader\XlsBase" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Xls.php:63
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/Xls.php on line 63
+[12-Dec-2025 06:06:58 UTC] PHP Fatal error:  Uncaught Error: Interface "PhpOffice\PhpSpreadsheet\Reader\IReadFilter" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/DefaultReadFilter.php:5
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Reader/DefaultReadFilter.php on line 5

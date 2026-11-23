@@ -1,0 +1,21 @@
+[12-Dec-2025 00:20:51 UTC] PHP Warning:  include(/home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/complexTest.php on line 5
+[12-Dec-2025 00:20:51 UTC] PHP Warning:  include(/home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/complexTest.php on line 5
+[12-Dec-2025 00:20:51 UTC] PHP Warning:  include(): Failed opening '/home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/../vendor/autoload.php' for inclusion (include_path='.:/opt/alt/php83/usr/share/pear:/opt/alt/php83/usr/share/php:/usr/share/pear:/usr/share/php') in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/complexTest.php on line 5
+[12-Dec-2025 00:20:51 UTC] PHP Fatal error:  Uncaught Error: Class "Complex\Complex" not found in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/complexTest.php:9
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/complexTest.php on line 9
+[12-Dec-2025 00:20:53 UTC] PHP Warning:  include(/home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testFunctions.php on line 5
+[12-Dec-2025 00:20:53 UTC] PHP Warning:  include(/home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testFunctions.php on line 5
+[12-Dec-2025 00:20:53 UTC] PHP Warning:  include(): Failed opening '/home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/../vendor/autoload.php' for inclusion (include_path='.:/opt/alt/php83/usr/share/pear:/opt/alt/php83/usr/share/php:/usr/share/pear:/usr/share/php') in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testFunctions.php on line 5
+[12-Dec-2025 00:20:53 UTC] PHP Fatal error:  Uncaught Error: Class "Complex\Complex" not found in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testFunctions.php:43
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testFunctions.php on line 43
+[12-Dec-2025 00:20:55 UTC] PHP Warning:  include(/home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testOperations.php on line 6
+[12-Dec-2025 00:20:55 UTC] PHP Warning:  include(/home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/../vendor/autoload.php): Failed to open stream: No such file or directory in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testOperations.php on line 6
+[12-Dec-2025 00:20:55 UTC] PHP Warning:  include(): Failed opening '/home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/../vendor/autoload.php' for inclusion (include_path='.:/opt/alt/php83/usr/share/pear:/opt/alt/php83/usr/share/php:/usr/share/pear:/usr/share/php') in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testOperations.php on line 6
+[12-Dec-2025 00:20:55 UTC] PHP Fatal error:  Uncaught Error: Class "Complex\Complex" not found in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testOperations.php:9
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/markbaker/complex/examples/testOperations.php on line 9

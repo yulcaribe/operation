@@ -1,0 +1,24 @@
+[12-Dec-2025 03:56:41 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Chart\Properties" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/GridLines.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/GridLines.php on line 11
+[12-Dec-2025 03:57:32 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Exception" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/Exception.php:7
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/Exception.php on line 7
+[12-Dec-2025 03:59:00 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Chart\Properties" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/AxisText.php:7
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/AxisText.php on line 7
+[12-Dec-2025 04:04:46 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Chart\Properties" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/TrendLine.php:5
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/TrendLine.php on line 5
+[12-Dec-2025 04:17:28 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Chart\Properties" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/Axis.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/Axis.php on line 11
+[12-Dec-2025 06:06:43 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Chart\Properties" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/DataSeriesValues.php:10
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Chart/DataSeriesValues.php on line 10

@@ -1,0 +1,20 @@
+[12-Dec-2025 02:32:57 UTC] PHP Fatal error:  Uncaught Error: Interface "PHPStan\Rules\Rule" not found in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/InvalidRegexPatternRule.php:24
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/InvalidRegexPatternRule.php on line 24
+[12-Dec-2025 02:34:18 UTC] PHP Fatal error:  Uncaught Error: Interface "PHPStan\Rules\Rule" not found in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/UnsafeStrictGroupsCallRule.php:24
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/UnsafeStrictGroupsCallRule.php on line 24
+[12-Dec-2025 03:31:56 UTC] PHP Fatal error:  Uncaught Error: Interface "PHPStan\Type\StaticMethodTypeSpecifyingExtension" not found in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/PregMatchTypeSpecifyingExtension.php:20
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/PregMatchTypeSpecifyingExtension.php on line 20
+[12-Dec-2025 03:31:57 UTC] PHP Fatal error:  Uncaught Error: Interface "PHPStan\Type\StaticMethodParameterOutTypeExtension" not found in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/PregMatchParameterOutTypeExtension.php:15
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/PregMatchParameterOutTypeExtension.php on line 15
+[12-Dec-2025 03:37:47 UTC] PHP Fatal error:  Uncaught Error: Interface "PHPStan\Type\StaticMethodParameterClosureTypeExtension" not found in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/PregReplaceCallbackClosureTypeExtension.php:21
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/composer/pcre/src/PHPStan/PregReplaceCallbackClosureTypeExtension.php on line 21

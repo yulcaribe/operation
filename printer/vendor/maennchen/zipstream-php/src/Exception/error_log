@@ -1,0 +1,28 @@
+[12-Dec-2025 06:15:50 UTC] PHP Fatal error:  Uncaught Error: Class "ZipStream\Exception" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/FileNotReadableException.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/FileNotReadableException.php on line 12
+[12-Dec-2025 06:16:26 UTC] PHP Fatal error:  Uncaught Error: Class "ZipStream\Exception" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/DosTimeOverflowException.php:13
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/DosTimeOverflowException.php on line 13
+[12-Dec-2025 06:27:06 UTC] PHP Fatal error:  Uncaught Error: Class "ZipStream\Exception" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/FileSizeIncorrectException.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/FileSizeIncorrectException.php on line 12
+[12-Dec-2025 06:27:11 UTC] PHP Fatal error:  Uncaught Error: Class "ZipStream\Exception" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/StreamNotReadableException.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/StreamNotReadableException.php on line 12
+[12-Dec-2025 07:03:20 UTC] PHP Fatal error:  Uncaught Error: Class "ZipStream\Exception" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/StreamNotSeekableException.php:13
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/StreamNotSeekableException.php on line 13
+[12-Dec-2025 07:08:46 UTC] PHP Fatal error:  Uncaught Error: Class "ZipStream\Exception" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/FileNotFoundException.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/FileNotFoundException.php on line 12
+[12-Dec-2025 07:09:18 UTC] PHP Fatal error:  Uncaught Error: Class "ZipStream\Exception" not found in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/ResourceActionException.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/maennchen/zipstream-php/src/Exception/ResourceActionException.php on line 12

@@ -1,0 +1,24 @@
+[12-Dec-2025 06:30:28 UTC] PHP Fatal error:  Uncaught Error: Interface "PhpOffice\PhpSpreadsheet\Cell\IValueBinder" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/DefaultValueBinder.php:14
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/DefaultValueBinder.php on line 14
+[12-Dec-2025 06:32:28 UTC] PHP Fatal error:  Uncaught Error: Interface "PhpOffice\PhpSpreadsheet\Cell\AddressRange" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/RowRange.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/RowRange.php on line 11
+[12-Dec-2025 06:35:23 UTC] PHP Fatal error:  Uncaught Error: Interface "PhpOffice\PhpSpreadsheet\Cell\AddressRange" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/ColumnRange.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/ColumnRange.php on line 11
+[12-Dec-2025 06:37:26 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/AdvancedValueBinder.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/AdvancedValueBinder.php on line 11
+[12-Dec-2025 06:38:23 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/StringValueBinder.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/StringValueBinder.php on line 11
+[12-Dec-2025 06:46:20 UTC] PHP Fatal error:  Uncaught Error: Interface "PhpOffice\PhpSpreadsheet\Cell\AddressRange" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/CellRange.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Cell/CellRange.php on line 12

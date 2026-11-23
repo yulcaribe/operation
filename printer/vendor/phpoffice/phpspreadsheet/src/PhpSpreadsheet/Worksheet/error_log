@@ -1,0 +1,32 @@
+[12-Dec-2025 02:57:32 UTC] PHP Fatal error:  Uncaught Error: Interface "PhpOffice\PhpSpreadsheet\IComparable" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/BaseDrawing.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/BaseDrawing.php on line 11
+[12-Dec-2025 03:02:25 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Worksheet\CellIterator" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/RowCellIterator.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/RowCellIterator.php on line 12
+[12-Dec-2025 03:06:58 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Worksheet\CellIterator" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/ColumnCellIterator.php:12
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/ColumnCellIterator.php on line 12
+[12-Dec-2025 03:08:40 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Worksheet\BaseDrawing" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/MemoryDrawing.php:9
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/MemoryDrawing.php on line 9
+[12-Dec-2025 03:09:36 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Worksheet\BaseDrawing" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/Drawing.php:8
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/Drawing.php on line 8
+[12-Dec-2025 03:10:37 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Worksheet\Drawing" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/HeaderFooterDrawing.php:5
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/HeaderFooterDrawing.php on line 5
+[12-Dec-2025 03:11:39 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Worksheet\Dimension" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/RowDimension.php:7
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/RowDimension.php on line 7
+[12-Dec-2025 03:12:39 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Worksheet\Dimension" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/ColumnDimension.php:8
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Worksheet/ColumnDimension.php on line 8

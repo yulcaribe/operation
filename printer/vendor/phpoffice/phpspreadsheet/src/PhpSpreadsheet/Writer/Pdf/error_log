@@ -1,0 +1,16 @@
+[12-Dec-2025 03:52:55 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Writer\Pdf\Tcpdf" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Writer/Pdf/TcpdfNoDie.php:5
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Writer/Pdf/TcpdfNoDie.php on line 5
+[12-Dec-2025 04:56:48 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Writer\Pdf\Tcpdf" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Writer/Pdf/TcpdfNoDie.php:5
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Writer/Pdf/TcpdfNoDie.php on line 5
+[12-Dec-2025 04:59:34 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Writer\Pdf\Tcpdf" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Writer/Pdf/TcpdfNoDie.php:5
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Writer/Pdf/TcpdfNoDie.php on line 5
+[12-Dec-2025 05:02:32 UTC] PHP Fatal error:  Uncaught Error: Class "PhpOffice\PhpSpreadsheet\Writer\Pdf\Tcpdf" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Writer/Pdf/TcpdfNoDie.php:5
+Stack trace:
+#0 {main}
+  thrown in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Writer/Pdf/TcpdfNoDie.php on line 5

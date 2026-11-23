@@ -1,0 +1,1 @@
+[05-Dec-2025 16:29:39 UTC] PHP Fatal error:  Cannot use PhpOffice\PhpSpreadsheet\RichText\RichText as RichText because the name is already in use in /home/yulcarib/public_html/printer/gumruk_dilekce.php on line 93
