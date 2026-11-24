@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/beta_debug.php';
 session_start();
 require_once 'db.php';
 
@@ -11,7 +12,7 @@ $user_id = $_SESSION['user_id'];
 $username = htmlspecialchars($_SESSION['username'] ?? '');
 
 // Aktif uçuş kontrolü
-$stmt = $conn->prepare("SELECT id FROM flights WHERE user_id = ? AND status = 'active' LIMIT 1");
+$stmt = $conn->prepare("SELECT f.id FROM flights AS f INNER JOIN flight_assignments AS fa ON fa.flight_id = f.id WHERE fa.user_id = ? AND fa.status = 'active' AND f.status = 'active' AND f.deleted_at IS NULL LIMIT 1");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $result = $stmt->get_result();
