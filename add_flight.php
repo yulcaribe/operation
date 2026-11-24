@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $user_id = $_SESSION['user_id'];
 
-$user_check = $conn->prepare("SELECT id, mail_activation, admin_approval FROM users WHERE id = ?");
+$user_check = $conn->prepare("SELECT id, status FROM users WHERE id = ? AND deleted_at IS NULL");
 $user_check->bind_param("i", $user_id);
 $user_check->execute();
 $user_result = $user_check->get_result();
@@ -23,13 +23,13 @@ if ($user_result->num_rows === 0) {
 }
 
 $user = $user_result->fetch_assoc();
-if ((int)$user['mail_activation'] !== 1 || (int)$user['admin_approval'] !== 1) {
+if ($user['status'] !== 'active') {
     session_destroy();
     header("Location: login.php");
     exit();
 }
 
-$stmt = $conn->prepare("SELECT id FROM flights WHERE user_id = ? AND status = 'active' LIMIT 1");
+$stmt = $conn->prepare("SELECT f.id FROM flights AS f INNER JOIN flight_assignments AS fa ON fa.flight_id = f.id WHERE fa.user_id = ? AND fa.status = 'active' AND f.status = 'active' AND f.deleted_at IS NULL LIMIT 1");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $result = $stmt->get_result();
