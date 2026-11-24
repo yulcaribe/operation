@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    $stmt = $conn->prepare("SELECT id, password, status FROM users WHERE username = ? AND deleted_at IS NULL");
+    $stmt = $conn->prepare("SELECT id, password, status, must_change_password FROM users WHERE username = ? AND deleted_at IS NULL");
     if (!$stmt) {
         die("Prepare failed: " . $conn->error);
     }
@@ -36,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 session_regenerate_id(true);
             }
 
-            header("Location: dashboard.php");
+            header("Location: " . ((int)$user['must_change_password'] === 1 ? "profile.php?change_password=1" : "dashboard.php"));
             exit();
         }
     } else {

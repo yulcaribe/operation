@@ -54,9 +54,8 @@ $profile_picture = 'assets/images/users/dummypp.png';
                     <a class="dropdown-item" href="flight_history.php">
                         <i class="bx bx-history text-muted fs-18 me-1"></i><span class="align-middle">Flight History</span>
                     </a>
-                    <a class="dropdown-item" href="talker/index.php">
-                        <i class="bx bx-message-dots text-muted fs-18 me-1"></i><span class="align-middle">Chat</span>
-                    </a>
+                    <a class="dropdown-item" href="add_flight.php"><i class="bx bx-plus-circle text-muted fs-18 me-1"></i><span class="align-middle">Yeni Uçuş</span></a>
+                    
                     <div class="dropdown-divider my-1"></div>
                         <a class="dropdown-item text-danger" href="logout.php">
                         <i class="bx bx-log-out fs-18 me-1"></i><span class="align-middle">Logout</span>
