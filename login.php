@@ -8,7 +8,22 @@ error_reporting(E_ALL);
 set_exception_handler(static function (Throwable $e): void {
     error_log(sprintf('[Operation login][EXCEPTION] %s: %s (%s:%d)', get_class($e), $e->getMessage(), $e->getFile(), $e->getLine()));
     http_response_code(500);
-    echo 'Giris islemi sirasinda sunucu hatasi olustu.';
+    // Gecici tanilama: PHP hatasini F12 > Console'da goster.
+    $debug = [
+        'type' => get_class($e),
+        'message' => $e->getMessage(),
+        'file' => basename($e->getFile()),
+        'line' => $e->getLine(),
+        'code' => $e->getCode(),
+    ];
+    $json = json_encode($debug, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE);
+    $safe = htmlspecialchars($e->getMessage(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    header('Content-Type: text/html; charset=UTF-8');
+    echo '<!doctype html><html lang="tr"><head><meta charset="UTF-8"><title>Login PHP Hatasi</title></head><body>';
+    echo '<h3>Login PHP hatasi (gecici debug)</h3><pre>' . $safe . '</pre>';
+    echo '<p>F12 &gt; Console bolumunde tur, dosya ve satir numarasina bak.</p>';
+    echo '<script>console.error("Operation login PHP hatasi:", ' . $json . ');</script>';
+    echo '</body></html>';
 });
 
 register_shutdown_function(static function (): void {
