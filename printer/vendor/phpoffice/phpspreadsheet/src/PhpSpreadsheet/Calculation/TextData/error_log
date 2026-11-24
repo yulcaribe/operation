@@ -1,1 +1,0 @@
-[12-Dec-2025 05:12:45 UTC] PHP Fatal error:  Trait "PhpOffice\PhpSpreadsheet\Calculation\ArrayEnabled" not found in /home/yulcarib/public_html/printer/vendor/phpoffice/phpspreadsheet/src/PhpSpreadsheet/Calculation/TextData/Thai.php on line 8
