@@ -20,16 +20,7 @@ require_once 'db.php';
 $user_id = $_SESSION['user_id'] ?? null;
 $profile_picture = 'assets/images/users/dummypp.png';
 
-if ($user_id) {
-    $stmt = $conn->prepare("SELECT profile_picture FROM users WHERE id = ?");
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $user = $result->fetch_assoc();
-    if (!empty($user['profile_picture']) && file_exists($user['profile_picture'])) {
-        $profile_picture = $user['profile_picture'];
-    }
-}
+// Profil resmi henuz veritabaninda yok; varsayilan avatar kullaniliyor.
 ?>
 
 <div class="container">
