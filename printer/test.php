@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../beta_debug.php';
 require __DIR__ . '/vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
