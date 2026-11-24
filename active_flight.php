@@ -57,8 +57,7 @@ $departure_time = $flight['departure_date_time'] ? date('H:i', strtotime($flight
 </head>
 
 <body>	
-  <header>
-    <header class="topbar">
+  <header class="topbar">
       <?php include 'topbar.php'; ?>
     </header>
 
