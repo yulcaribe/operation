@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/beta_debug.php';
 if (session_status() === PHP_SESSION_NONE) session_start();
 require_once "db.php";
 $user_id = $_SESSION['user_id'] ?? null;
