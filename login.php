@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    $stmt = $conn->prepare("SELECT id, password, mail_activation, admin_approval FROM users WHERE username = ?");
+    $stmt = $conn->prepare("SELECT id, password, status FROM users WHERE username = ? AND deleted_at IS NULL");
     if (!$stmt) {
         die("Prepare failed: " . $conn->error);
     }
@@ -61,10 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!password_verify($password, $user['password'])) {
             echo "⚠️ Hatalı şifre.";
-        } elseif ((int)$user['mail_activation'] !== 1) {
-            echo "📧 E-posta adresinizi doğrulamanız gerekiyor.";
-        } elseif ((int)$user['admin_approval'] !== 1) {
-            echo "⏳ Hesabınız henüz admin tarafından onaylanmadı.";
+        } elseif ($user['status'] !== 'active') {
+            echo "⚠️ Hesabınız aktif değil.";
         } else {
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $username;
