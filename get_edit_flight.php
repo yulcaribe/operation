@@ -1,88 +1,56 @@
 <?php
 require_once __DIR__ . '/beta_debug.php';
-ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
-error_reporting(E_ALL);
-
 session_start();
-require_once 'db.php';
-
-if (!isset($_SESSION['user_id'])) {
-    http_response_code(401);
-    echo "Oturum süresi doldu. Lütfen tekrar giriş yapın.";
-    exit;
-}
-
-$user_id = $_SESSION['user_id'];
-
-function safe($val) {
-    return htmlspecialchars($val ?? '', ENT_QUOTES, 'UTF-8');
-}
-
-// === SİLME ===
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/operation_functions.php';
+$user_id = (int)($_SESSION['user_id'] ?? 0);
+if (!$user_id) { http_response_code(401); exit('Oturum açılmalı.'); }
+function safe($value): string { return htmlspecialchars((string)($value ?? ''), ENT_QUOTES, 'UTF-8'); }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete'])) {
-    $id = intval($_POST['id'] ?? 0);
-    if ($id > 0) {
-        $stmt = $conn->prepare("DELETE FROM flights WHERE id = ? AND user_id = ?");
-        $stmt->bind_param("ii", $id, $user_id);
-        echo $stmt->execute() ? "Uçuş silindi." : "Silme başarısız: " . $conn->error;
-    } else {
-        http_response_code(400);
-        echo "Geçersiz uçuş ID.";
-    }
+    $id = (int)($_POST['id'] ?? 0);
+    $stmt = $conn->prepare("DELETE FROM flights WHERE id = ? AND user_id = ?");
+    $stmt->bind_param('ii', $id, $user_id);
+    $stmt->execute();
+    echo $stmt->affected_rows ? 'Uçuş silindi.' : 'Uçuş bulunamadı.';
     exit;
 }
-
-// === GÜNCELLEME ===
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $id = intval($_POST['id'] ?? 0);
-    $tail = $_POST['tail_number'] ?? '';
-    $arrival = $_POST['arrival_flight_number'] ?? '';
-    $departure = $_POST['departure_flight_number'] ?? '';
-    $parking = $_POST['parkposition'] ?? '';
-    $arrival_date = $_POST['arrival_date'] ?? '';
-    $arrival_time = $_POST['scheduled_arrival'] ?? '';
-    $departure_date = $_POST['departure_date'] ?? '';
-    $departure_time = $_POST['scheduled_departure'] ?? '';
-    $arrival_datetime = ($arrival_date && $arrival_time) ? "$arrival_date $arrival_time:00" : null;
-    $departure_datetime = ($departure_date && $departure_time) ? "$departure_date $departure_time:00" : null;
-
-    $check = $conn->prepare("SELECT id FROM flights WHERE id = ? AND user_id = ?");
-    $check->bind_param("ii", $id, $user_id);
+    $id = (int)($_POST['id'] ?? 0);
+    $check = $conn->prepare("SELECT id FROM flights WHERE id = ? AND user_id = ? AND deleted_at IS NULL");
+    $check->bind_param('ii', $id, $user_id);
     $check->execute();
-    if ($check->get_result()->num_rows === 0) {
-        http_response_code(403);
-        echo "Bu uçuş size ait değil.";
-        exit;
-    }
-
-    $stmt = $conn->prepare("UPDATE flights SET tail_number=?, arrival_flight_number=?, departure_flight_number=?, parkposition=?, arrival_date_time=?, departure_date_time=? WHERE id=?");
-    $stmt->bind_param("ssssssi", $tail, $arrival, $departure, $parking, $arrival_datetime, $departure_datetime, $id);
-    echo $stmt->execute() ? "Uçuş bilgisi güncellendi." : "Güncelleme başarısız: " . $conn->error;
+    if (!$check->get_result()->fetch_assoc()) { http_response_code(403); exit('Bu uçuş size ait değil.'); }
+    $tail = trim((string)($_POST['tail_number'] ?? ''));
+    $arrival = trim((string)($_POST['arrival_flight_number'] ?? ''));
+    $departure = trim((string)($_POST['departure_flight_number'] ?? ''));
+    $parking = trim((string)($_POST['parkposition'] ?? ''));
+    $arrivalDate = trim((string)($_POST['arrival_date'] ?? ''));
+    $arrivalTime = trim((string)($_POST['scheduled_arrival'] ?? ''));
+    $departureDate = trim((string)($_POST['departure_date'] ?? ''));
+    $departureTime = trim((string)($_POST['scheduled_departure'] ?? ''));
+    $arrivalAt = $arrivalDate !== '' && $arrivalTime !== '' ? $arrivalDate . ' ' . $arrivalTime . ':00' : null;
+    $departureAt = $departureDate !== '' && $departureTime !== '' ? $departureDate . ' ' . $departureTime . ':00' : null;
+    $stmt = $conn->prepare("UPDATE flights SET tail_number = ?, arrival_flight_number = ?, departure_flight_number = ?, stand = ?, scheduled_arrival_at = ?, scheduled_departure_at = ? WHERE id = ? AND user_id = ?");
+    $stmt->bind_param('ssssssii', $tail, $arrival, $departure, $parking, $arrivalAt, $departureAt, $id, $user_id);
+    $stmt->execute();
+    echo 'Uçuş bilgisi güncellendi.';
     exit;
 }
-
-// === GÖRÜNTÜLEME ===
-$id = intval($_GET['id'] ?? 0);
+$id = (int)($_GET['id'] ?? 0);
 $edit = isset($_GET['edit']);
-
-$stmt = $conn->prepare("SELECT * FROM flights WHERE id = ? AND user_id = ?");
-$stmt->bind_param("ii", $id, $user_id);
+$stmt = $conn->prepare("SELECT * FROM flights WHERE id = ? AND user_id = ? AND deleted_at IS NULL");
+$stmt->bind_param('ii', $id, $user_id);
 $stmt->execute();
-$result = $stmt->get_result();
-$flight = $result->fetch_assoc();
-
-if (!$flight) {
-    echo "Uçuş bulunamadı.";
-    exit;
-}
-
+$flight = $stmt->get_result()->fetch_assoc();
+if (!$flight) { http_response_code(404); exit('Uçuş bulunamadı.'); }
+$flight = op_legacy_flight($conn, $flight);
 $type = strtolower($flight['flight_type']);
 $arrival_date = $flight['arrival_date_time'] ? date('Y-m-d', strtotime($flight['arrival_date_time'])) : '';
 $arrival_time = $flight['arrival_date_time'] ? date('H:i', strtotime($flight['arrival_date_time'])) : '';
 $departure_date = $flight['departure_date_time'] ? date('Y-m-d', strtotime($flight['departure_date_time'])) : '';
 $departure_time = $flight['departure_date_time'] ? date('H:i', strtotime($flight['departure_date_time'])) : '';
 ?>
+
 
 <?php if ($edit): ?>
 <form id="editFlightForm">
@@ -164,20 +132,22 @@ $departure_time = $flight['departure_date_time'] ? date('H:i', strtotime($flight
   <thead class="table-light"><tr><th>Süreç</th><th>Zaman(lar)</th></tr></thead>
   <tbody>
     <?php
-    $processes = match($type) {
-        'arrival' => ['doorsopening','gpu','unloading','deboarding','arrivalcrewcar'],
-        'departure' => ['crew','fueling','catering','loading','preboarding','boarding','firstpax','doorclosed','pushback','offblock'],
-        'turnaround' => ['doorsopening','gpu','unloading','deboarding','arrivalcrewcar','crew','fueling','catering','preboarding','boarding','firstpax','doorclosed','pushback','offblock'],
-        default => []
-    };
-
-    foreach ($processes as $proc):
-        $start = $flight[$proc.'_start_time'] ?? null;
-        $end = $flight[$proc.'_end_time'] ?? null;
-        $time = $flight[$proc] ?? null;
+    $processes = [];
+    $defs = op_process_keys();
+    if ($type === 'arrival' || $type === 'turnaround') {
+        foreach ($defs['arrival'] as $key) $processes[] = ['arrival', $key];
+    }
+    if ($type === 'departure' || $type === 'turnaround') {
+        foreach ($defs['departure'] as $key) $processes[] = ['departure', $key];
+    }
+    foreach ($processes as [$phase, $proc]):
+        $row = $flight['_process_rows'][$phase][$proc] ?? [];
+        $start = $row['started_at'] ?? null;
+        $end = $row['finished_at'] ?? null;
+        $time = $row['value_datetime'] ?? null;
     ?>
       <tr>
-        <td><?= ucwords(str_replace('_', ' ', $proc)) ?></td>
+        <td><?= safe(ucwords(str_replace('_', ' ', $proc)) . ($type === 'turnaround' ? ' (' . ucfirst($phase) . ')' : '')) ?></td>
         <td>
           <?php if ($start || $end): ?>
             <?= $start ? "Start: ".date('H:i', strtotime($start)) : '' ?>

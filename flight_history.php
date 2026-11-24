@@ -1,58 +1,33 @@
 <?php
 require_once __DIR__ . '/beta_debug.php';
-ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
-error_reporting(E_ALL);
 session_start();
-require_once 'db.php';
-
-if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
-    exit();
+require_once __DIR__ . '/db.php';
+$user_id = (int)($_SESSION['user_id'] ?? 0);
+if (!$user_id) { header('Location: login.php'); exit; }
+$check = $conn->prepare("SELECT id FROM users WHERE id = ? AND status = 'active' AND deleted_at IS NULL");
+$check->bind_param('i', $user_id);
+$check->execute();
+if (!$check->get_result()->fetch_assoc()) { session_destroy(); header('Location: login.php'); exit; }
+$counts = ['total'=>0, 'arrival'=>0, 'departure'=>0, 'turnaround'=>0];
+$stmt = $conn->prepare("SELECT flight_type, COUNT(*) AS total FROM flights WHERE user_id = ? AND deleted_at IS NULL GROUP BY flight_type");
+$stmt->bind_param('i', $user_id);
+$stmt->execute();
+foreach ($stmt->get_result() as $row) {
+    $counts[$row['flight_type']] = (int)$row['total'];
+    $counts['total'] += (int)$row['total'];
 }
-
-$user_id = $_SESSION['user_id'];
-
-// Kullanıcı kontrolü + mail + admin onayı
-$user_check = $conn->prepare("SELECT id, mail_activation, admin_approval FROM users WHERE id = ?");
-$user_check->bind_param("i", $user_id);
-$user_check->execute();
-$user_result = $user_check->get_result();
-
-if ($user_result->num_rows === 0) {
-    session_destroy();
-    header("Location: login.php");
-    exit();
-}
-
-$user = $user_result->fetch_assoc();
-if ((int)$user['mail_activation'] !== 1 || (int)$user['admin_approval'] !== 1) {
-    session_destroy();
-    header("Location: login.php");
-    exit();
-}
-
-// Uçuş sayıları
-$total_flights = $conn->query("SELECT COUNT(*) AS total FROM flights WHERE user_id = $user_id")->fetch_assoc()['total'];
-$total_arrivals = $conn->query("SELECT COUNT(*) AS total FROM flights WHERE user_id = $user_id AND flight_type = 'arrival'")->fetch_assoc()['total'];
-$total_departures = $conn->query("SELECT COUNT(*) AS total FROM flights WHERE user_id = $user_id AND flight_type = 'departure'")->fetch_assoc()['total'];
-$total_turnarounds = $conn->query("SELECT COUNT(*) AS total FROM flights WHERE user_id = $user_id AND flight_type = 'turnaround'")->fetch_assoc()['total'];
-
-
-// Tamamlanmış uçuşları çek
-$stmt = $conn->prepare("
-  SELECT id, tail_number, arrival_flight_number, departure_flight_number, 
-         arrival_date_time, departure_date_time, parkposition, flight_type, iata_code
-  FROM flights
-  WHERE user_id = ? AND status = 'completed'
-  ORDER BY arrival_date_time DESC
-");
-
-$stmt->bind_param("i", $user_id);
+$total_flights = $counts['total']; $total_arrivals = $counts['arrival'];
+$total_departures = $counts['departure']; $total_turnarounds = $counts['turnaround'];
+$stmt = $conn->prepare("SELECT id, tail_number, arrival_flight_number, departure_flight_number,
+ scheduled_arrival_at AS arrival_date_time, scheduled_departure_at AS departure_date_time,
+ stand AS parkposition, flight_type, iata_code
+ FROM flights WHERE user_id = ? AND status = 'completed' AND deleted_at IS NULL
+ ORDER BY COALESCE(scheduled_departure_at, scheduled_arrival_at, created_at) DESC");
+$stmt->bind_param('i', $user_id);
 $stmt->execute();
 $flights = $stmt->get_result();
-
 ?>
+
 
 
 <!DOCTYPE html>
