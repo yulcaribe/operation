@@ -1,201 +1,112 @@
 <?php
 require_once __DIR__ . '/beta_debug.php';
-ini_set('display_errors', 0);
-ini_set('display_startup_errors', 0);
-error_reporting(E_ALL);
-
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-require_once "db.php";
-
-// Oturum kontrolü
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(["status" => "error", "message" => "Kullanıcı oturumu bulunamadı."]);
+if (session_status() === PHP_SESSION_NONE) session_start();
+header('Content-Type: application/json; charset=utf-8');
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/operation_functions.php';
+function op_reply(bool $ok, string $message, array $extra = []): void {
+    echo json_encode(array_merge(['status' => $ok ? 'success' : 'error', 'message' => $message], $extra), JSON_UNESCAPED_UNICODE);
     exit;
 }
-
-$user_id = $_SESSION['user_id'];
-
-// Kullanıcının gerçekten aktif uçuşu var mı ve ona mı ait?
-$stmt = $conn->prepare("
-    SELECT id 
-    FROM flights 
-    WHERE user_id = ? AND status = 'active' 
-    ORDER BY id DESC 
-    LIMIT 1
-");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$result = $stmt->get_result();
-$row = $result->fetch_assoc();
-
-$flight_id = $row['id'] ?? null;
-
-if (!$flight_id) {
-    echo json_encode(["status" => "error", "message" => "Aktif uçuş bulunamadı."]);
-    exit;
+function op_form_datetime(string $dateKey, string $timeKey, ?string $fallbackDate = null): ?string {
+    $time = trim((string)($_POST[$timeKey] ?? ''));
+    $date = trim((string)($_POST[$dateKey] ?? ''));
+    if ($time === '') return null;
+    if ($date === '') $date = $fallbackDate ?? date('Y-m-d');
+    $text = $date . ' ' . substr($time, 0, 5);
+    $dt = DateTimeImmutable::createFromFormat('!Y-m-d H:i', $text);
+    return $dt && $dt->format('Y-m-d H:i') === $text ? $dt->format('Y-m-d H:i:s') : null;
 }
-
-$action = $_POST['action'] ?? null;
-$process_type = $_POST['process_type'] ?? null;
-$reset_target = $_POST['reset_target'] ?? null;
-
-if ($action === 'mark_time' && $process_type) {
-    $column = $process_type;
-    $query = "UPDATE flights SET $column = CURRENT_TIMESTAMP WHERE id = ?";
-    $stmt = $conn->prepare($query);
-    $stmt->bind_param("i", $flight_id);
-    $stmt->execute();
-    echo json_encode(["status" => "success", "message" => "$process_type zamanı işlendi"]);
-    exit;
-}
-
-if ($action === 'reset_single' && $process_type) {
-    $column = $process_type;
-    $query = "UPDATE flights SET $column = NULL WHERE id = ?";
-    $stmt = $conn->prepare($query);
-    $stmt->bind_param("i", $flight_id);
-    $stmt->execute();
-    echo json_encode(["status" => "success", "message" => "$process_type sıfırlandı"]);
-    exit;
-}
-
-if ($action === 'save_arrival_data') {
-    header('Content-Type: application/json');
-
-    $touchdown = (!empty($_POST['touchdown_date']) && !empty($_POST['touchdown_time']))
-        ? $_POST['touchdown_date'] . ' ' . $_POST['touchdown_time'] . ':00'
-        : null;
-
-    $onblock = (!empty($_POST['onblock_date']) && !empty($_POST['onblock_time']))
-        ? $_POST['onblock_date'] . ' ' . $_POST['onblock_time'] . ':00'
-        : null;
-
-    $remainingfuel = ($_POST['remainingfuel'] !== "") ? (int)$_POST['remainingfuel'] : null;
-    $arrival_note  = ($_POST['arrival_note'] !== "") ? $_POST['arrival_note'] : null;
-
-    $stmt = $conn->prepare("
-        UPDATE flights 
-        SET touchdown = ?, onblock = ?, remainingfuel = ?, arrival_note = ?
-        WHERE id = ?
-    ");
-    $stmt->bind_param("ssisi", $touchdown, $onblock, $remainingfuel, $arrival_note, $flight_id);
-
-    if ($stmt->execute()) {
-        echo json_encode(["status" => "success", "message" => "Arrival bilgileri kaydedildi"]);
-    } else {
-        echo json_encode(["status" => "error", "message" => $stmt->error]);
+$userId = (int)($_SESSION['user_id'] ?? 0);
+if (!$userId) { http_response_code(401); op_reply(false, 'Oturum bulunamadı.'); }
+$flightId = (int)($_POST['flight_id'] ?? $_SESSION['active_flight_id'] ?? 0);
+$flight = op_current_flight($conn, $userId, $flightId);
+if (!$flight) { http_response_code(403); op_reply(false, 'Aktif uçuş bulunamadı veya size ait değil.'); }
+$flightId = (int)$flight['id'];
+$action = (string)($_POST['action'] ?? '');
+$phase = (string)($_POST['phase'] ?? '');
+$key = (string)($_POST['process_type'] ?? '');
+$allowed = op_process_keys();
+try {
+    if ($action === 'save_arrival_data' || $action === 'save_departure_data') {
+        if ($action === 'save_arrival_data') {
+            if ($flight['flight_type'] === 'departure') op_reply(false, 'Bu uçuşta Arrival yok.');
+            $schedule = $flight['scheduled_arrival_at'] ? substr($flight['scheduled_arrival_at'], 0, 10) : date('Y-m-d');
+            $touchdown = op_form_datetime('touchdown_date', 'touchdown_time', $schedule);
+            $onblock = op_form_datetime('onblock_date', 'onblock_time', $schedule);
+            if ($touchdown === null && !empty($_POST['touchdown'])) { $_POST['touchdown_time'] = $_POST['touchdown']; $touchdown = op_form_datetime('touchdown_date', 'touchdown_time', $schedule); }
+            if ($onblock === null && !empty($_POST['onblock'])) { $_POST['onblock_time'] = $_POST['onblock']; $onblock = op_form_datetime('onblock_date', 'onblock_time', $schedule); }
+            $fuel = trim((string)($_POST['remainingfuel'] ?? ''));
+            $fuel = $fuel === '' ? null : str_replace(',', '.', $fuel);
+            if ($fuel !== null && !is_numeric($fuel)) op_reply(false, 'Geçersiz yakıt değeri.');
+            $note = trim((string)($_POST['arrival_note'] ?? ''));
+            $stmt = $conn->prepare("UPDATE flights SET touchdown_at = ?, onblock_at = ?, remaining_fuel = ?, arrival_note = ? WHERE id = ? AND user_id = ?");
+            $stmt->bind_param('ssssii', $touchdown, $onblock, $fuel, $note, $flightId, $userId);
+            $stmt->execute();
+            op_reply(true, 'Arrival bilgileri kaydedildi.');
+        }
+        if ($flight['flight_type'] === 'arrival') op_reply(false, 'Bu uçuşta Departure yok.');
+        $fuel = trim((string)($_POST['blockfuel'] ?? ''));
+        $fuel = $fuel === '' ? null : str_replace(',', '.', $fuel);
+        if ($fuel !== null && !is_numeric($fuel)) op_reply(false, 'Geçersiz yakıt değeri.');
+        $schedule = $flight['scheduled_departure_at'] ? substr($flight['scheduled_departure_at'], 0, 10) : date('Y-m-d');
+        $ctot = op_form_datetime('ctot_date', 'ctot', $schedule);
+        $pax = trim((string)($_POST['final_pax'] ?? ''));
+        $note = trim((string)($_POST['departure_note'] ?? ''));
+        $stmt = $conn->prepare("UPDATE flights SET block_fuel = ?, ctot_at = ?, final_pax = ?, departure_note = ? WHERE id = ? AND user_id = ?");
+        $stmt->bind_param('ssssii', $fuel, $ctot, $pax, $note, $flightId, $userId);
+        $stmt->execute();
+        op_reply(true, 'Departure bilgileri kaydedildi.');
     }
-    exit;
+    if (!isset($allowed[$phase]) || !in_array($key, $allowed[$phase], true)) {
+        http_response_code(400); op_reply(false, 'Geçersiz süreç.');
+    }
+    if ($flight['flight_type'] !== 'turnaround' && $flight['flight_type'] !== $phase)
+        op_reply(false, 'Bu uçuş türünde süreç kullanılamaz.');
+    if ($action === 'reset_single') {
+        $stmt = $conn->prepare("DELETE FROM flight_processes WHERE flight_id = ? AND phase = ? AND process_key = ?");
+        $stmt->bind_param('iss', $flightId, $phase, $key);
+        $stmt->execute();
+        op_reply(true, 'Süreç sıfırlandı.');
+    }
+    if ($action === 'reset') {
+        $target = (string)($_POST['reset_target'] ?? '');
+        if (!in_array($target, ['start', 'finish', 'not_used'], true)) op_reply(false, 'Geçersiz reset hedefi.');
+        $stmt = $conn->prepare("SELECT state, started_at, finished_at FROM flight_processes WHERE flight_id = ? AND phase = ? AND process_key = ?");
+        $stmt->bind_param('iss', $flightId, $phase, $key);
+        $stmt->execute();
+        $old = $stmt->get_result()->fetch_assoc();
+        if (!$old) op_reply(true, 'Süreç sıfırlandı.', ['new_status' => 'not_started']);
+        if ($target === 'start' || $target === 'not_used') {
+            $state = 'not_started'; $start = null; $end = null;
+        } else {
+            $state = 'started'; $start = $old['started_at']; $end = null;
+        }
+        $update = $conn->prepare("UPDATE flight_processes SET state = ?, started_at = ?, finished_at = ?, value_datetime = NULL WHERE flight_id = ? AND phase = ? AND process_key = ?");
+        $update->bind_param('sssiss', $state, $start, $end, $flightId, $phase, $key);
+        $update->execute();
+        op_reply(true, 'Süreç sıfırlandı.', ['new_status' => $state]);
+    }
+    if ($action === 'mark_time') {
+        $stmt = $conn->prepare("INSERT INTO flight_processes (flight_id, phase, process_key, state, value_datetime) VALUES (?, ?, ?, 'finished', NOW()) ON DUPLICATE KEY UPDATE state = 'finished', value_datetime = NOW()");
+        $stmt->bind_param('iss', $flightId, $phase, $key);
+        $stmt->execute();
+        op_reply(true, 'Zaman kaydedildi.', ['new_status' => 'finished']);
+    }
+    if (in_array($action, ['start', 'finish', 'not_used'], true)) {
+        $state = $action === 'start' ? 'started' : ($action === 'finish' ? 'finished' : 'not_used');
+        if ($action === 'start')
+            $stmt = $conn->prepare("INSERT INTO flight_processes (flight_id, phase, process_key, state, started_at) VALUES (?, ?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE state = VALUES(state), started_at = NOW(), finished_at = NULL");
+        elseif ($action === 'finish')
+            $stmt = $conn->prepare("INSERT INTO flight_processes (flight_id, phase, process_key, state, finished_at) VALUES (?, ?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE state = VALUES(state), finished_at = NOW()");
+        else
+            $stmt = $conn->prepare("INSERT INTO flight_processes (flight_id, phase, process_key, state) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE state = VALUES(state), started_at = NULL, finished_at = NULL");
+        $stmt->bind_param('isss', $flightId, $phase, $key, $state);
+        $stmt->execute();
+        op_reply(true, 'Süreç güncellendi.', ['new_status' => $state]);
+    }
+    http_response_code(400); op_reply(false, 'Geçersiz işlem.');
+} catch (Throwable $e) {
+    error_log('[Operation BETA] process_handler: ' . $e->getMessage());
+    http_response_code(500); op_reply(false, 'Kayıt sırasında sistem hatası oluştu.');
 }
-
-
-
-
-
-
-if ($action === 'save_departure_data') {
-    header('Content-Type: application/json');
-    ini_set('display_errors', 0);
-    ini_set('log_errors', 1);
-    error_reporting(E_ALL);
-
-    // Gelen verileri işle
-    $blockfuel = !empty($_POST['blockfuel']) ? (int)$_POST['blockfuel'] : 0;
-
-    $ctot_time = $_POST['ctot'] ?? '';
-    $ctot = (!empty($ctot_time)) ? date('Y-m-d') . ' ' . $ctot_time . ':00' : null;
-
-    $final_pax = !empty($_POST['final_pax']) ? $_POST['final_pax'] : '0';
-    $departure_note = !empty($_POST['departure_note']) ? $_POST['departure_note'] : '';
-
-    // SQL hazırlığı
-    $stmt = $conn->prepare("UPDATE flights SET blockfuel = ?, ctot = ?, final_pax = ?, departure_note = ? WHERE id = ?");
-    
-    // prepare kontrolü
-    if (!$stmt) {
-        echo json_encode(["status" => "error", "message" => "Prepare hatası: " . $conn->error]);
-        exit;
-    }
-
-    $stmt->bind_param("isssi", $blockfuel, $ctot, $final_pax, $departure_note, $flight_id);
-
-    // Sorguyu çalıştır
-    if ($stmt->execute()) {
-        echo json_encode(["status" => "success", "message" => "Departure bilgileri kaydedildi"]);
-    } else {
-        echo json_encode(["status" => "error", "message" => $stmt->error]);
-    }
-    exit;
-}
-
-
-if ($action === "reset" && $process_type && $reset_target) {
-    $status_column = $process_type . "_status";
-    $start_column = $process_type . "_start_time";
-    $end_column = $process_type . "_end_time";
-
-    if ($reset_target === 'start') {
-        $query = "UPDATE flights SET $start_column = NULL, $status_column = 'not_started' WHERE id = ?";
-    } elseif ($reset_target === 'finish') {
-        $query = "UPDATE flights SET $end_column = NULL, $status_column = 'started' WHERE id = ?";
-    } elseif ($reset_target === 'not_used') {
-        $query = "UPDATE flights SET $status_column = 'not_started' WHERE id = ?";
-    } else {
-        echo json_encode(["status" => "error", "message" => "Geçersiz reset hedefi"]);
-        exit;
-    }
-
-    $stmt = $conn->prepare($query);
-    $stmt->bind_param("i", $flight_id);
-    $stmt->execute();
-    echo json_encode(["status" => "success", "new_status" => "active"]);
-    exit;
-}
-
-if (in_array($action, ['start', 'finish', 'not_used']) && $process_type) {
-    $status_column = $process_type . "_status";
-    $start_column = $process_type . "_start_time";
-    $end_column = $process_type . "_end_time";
-
-    switch ($action) {
-        case "start":
-            $new_status = "started";
-            $time_column = $start_column;
-            break;
-        case "finish":
-            $new_status = "finished";
-            $time_column = $end_column;
-            break;
-        case "not_used":
-            $new_status = "not_used";
-            $time_column = null;
-            break;
-        default:
-            echo json_encode(["status" => "error", "message" => "Geçersiz işlem"]);
-            exit;
-    }
-
-    if (isset($time_column)) {
-        $query = "UPDATE flights SET $status_column = ?, $time_column = CURRENT_TIMESTAMP WHERE id = ?";
-        $stmt = $conn->prepare($query);
-        $stmt->bind_param("si", $new_status, $flight_id);
-    } else {
-        $query = "UPDATE flights SET $status_column = ? WHERE id = ?";
-        $stmt = $conn->prepare($query);
-        $stmt->bind_param("si", $new_status, $flight_id);
-    }
-
-    $success = $stmt->execute();
-
-    if ($success) {
-        echo json_encode(["status" => "success", "message" => "İşlem başarıyla güncellendi", "new_status" => $new_status]);
-    } else {
-        echo json_encode(["status" => "error", "message" => "Veritabanı hatası: " . $stmt->error]);
-    }
-    exit;
-}
-
-echo json_encode(["status" => "error", "message" => "Geçersiz işlem"]);
