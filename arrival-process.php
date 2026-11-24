@@ -64,18 +64,18 @@ $arrival_note = $flight['notes'] ?? '';
 <div class="mb-4" data-status="<?= $status ?>">
       <h5 class="mb-2 text-uppercase"><?= strtoupper($surec) ?></h5>
       <?php if (!in_array($surec, ['doorsopening', 'arrivalcrewcar'])): ?>
-        <button class="btn btn-outline-primary me-2 mb-2" data-type="<?= $surec ?>" data-action="start" onclick="handleProcess(this)" <?= $status !== 'not_started' ? 'disabled' : '' ?>><?= $start_time ? date('H:i', strtotime($start_time)) : 'START' ?></button>
-        <button class="btn btn-outline-success me-2 mb-2" data-type="<?= $surec ?>" data-action="finish" onclick="handleProcess(this)" <?= $status !== 'started' ? 'disabled' : '' ?>><?= $end_time ? date('H:i', strtotime($end_time)) : 'FINISH' ?></button>
-        <button class="btn btn-outline-secondary me-2 mb-2" data-type="<?= $surec ?>" data-action="not_used" onclick="handleProcess(this)" <?= $status !== 'not_started' ? 'disabled' : '' ?>><?= $status === 'not_used' ? 'X' : 'NOT USED' ?></button>
+        <button class="btn btn-outline-primary me-2 mb-2" data-type="<?= $surec ?>" data-phase="arrival" data-action="start" onclick="handleProcess(this)" <?= $status !== 'not_started' ? 'disabled' : '' ?>><?= $start_time ? date('H:i', strtotime($start_time)) : 'START' ?></button>
+        <button class="btn btn-outline-success me-2 mb-2" data-type="<?= $surec ?>" data-phase="arrival" data-action="finish" onclick="handleProcess(this)" <?= $status !== 'started' ? 'disabled' : '' ?>><?= $end_time ? date('H:i', strtotime($end_time)) : 'FINISH' ?></button>
+        <button class="btn btn-outline-secondary me-2 mb-2" data-type="<?= $surec ?>" data-phase="arrival" data-action="not_used" onclick="handleProcess(this)" <?= $status !== 'not_started' ? 'disabled' : '' ?>><?= $status === 'not_used' ? 'X' : 'NOT USED' ?></button>
         <button class="btn btn-outline-danger mb-1 reset-button" onclick="toggleResetOptions(this)" <?= $status === 'not_started' ? 'disabled' : '' ?>>RESET</button>
         <div class="reset-menu">
-          <button class="btn btn-sm btn-outline-dark" data-type="<?= $surec ?>" data-target="start" onclick="applyReset(this)" <?= $end_time ? 'disabled' : '' ?>>Start</button>
-          <button class="btn btn-sm btn-outline-dark" data-type="<?= $surec ?>" data-target="finish" onclick="applyReset(this)">Finish</button>
-          <button class="btn btn-sm btn-outline-dark not-used-reset" data-type="<?= $surec ?>" data-target="not_used" onclick="applyReset(this)">Not Used</button>
+          <button class="btn btn-sm btn-outline-dark" data-type="<?= $surec ?>" data-phase="arrival" data-target="start" onclick="applyReset(this)" <?= $end_time ? 'disabled' : '' ?>>Start</button>
+          <button class="btn btn-sm btn-outline-dark" data-type="<?= $surec ?>" data-phase="arrival" data-target="finish" onclick="applyReset(this)">Finish</button>
+          <button class="btn btn-sm btn-outline-dark not-used-reset" data-type="<?= $surec ?>" data-phase="arrival" data-target="not_used" onclick="applyReset(this)">Not Used</button>
         </div>
       <?php else: ?>
-        <button class="btn btn-outline-primary me-2 mb-2" onclick="submitSingleButton(this)" data-type="<?= $surec ?>" data-action="mark_time" <?= $flight[$surec] ? 'disabled' : '' ?>><?= $flight[$surec] ? date('H:i', strtotime($flight[$surec])) : strtoupper($surec) ?></button>
-        <button class="btn btn-outline-danger me-2 mb-2" onclick="resetSingleButton('<?= $surec ?>')">RESET</button>
+        <button class="btn btn-outline-primary me-2 mb-2" onclick="submitSingleButton(this)" data-type="<?= $surec ?>" data-phase="arrival" data-action="mark_time" <?= $flight[$surec] ? 'disabled' : '' ?>><?= $flight[$surec] ? date('H:i', strtotime($flight[$surec])) : strtoupper($surec) ?></button>
+        <button class="btn btn-outline-danger me-2 mb-2" onclick="resetSingleButton('<?= $surec ?>','arrival')">RESET</button>
       <?php endif; ?>
     </div>
   <?php endforeach; ?>
@@ -134,7 +134,7 @@ function handleProcess(button) {
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival',
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: button.dataset.phase,
       action: action,
       process_type: processType
     })
@@ -188,7 +188,7 @@ function applyReset(button) {
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival',
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: button.dataset.phase,
       action: "reset",
       process_type: processType,
       reset_target: target
@@ -242,7 +242,7 @@ function submitSingleButton(button) {
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival', action: "mark_time", process_type: type })
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: button.dataset.phase, action: "mark_time", process_type: type })
   })
   .then(res => res.json())
   .then(data => {
@@ -261,12 +261,12 @@ function submitSingleButton(button) {
   });
 }
 
-function resetSingleButton(type) {
+function resetSingleButton(type, selectedPhase) {
   if (!confirm("Sıfırlamak istediğinize emin misiniz?")) return;
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival', action: "reset_single", process_type: type })
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: selectedPhase, action: "reset_single", process_type: type })
   })
   .then(res => res.json())
   .then(data => location.reload());
