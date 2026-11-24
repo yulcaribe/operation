@@ -12,15 +12,13 @@ $user_id = $_SESSION['user_id'] ?? null;
 if (!$user_id) {
     die("Kullanıcı oturumu yok.");
 }
-$conn->query("SET sql_mode = ''");
-$stmt = $conn->prepare("SELECT * FROM flights WHERE user_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$flight = $stmt->get_result()->fetch_assoc();
-
+require_once __DIR__ . '/operation_functions.php';
+$chosenFlightId = (int)($flight['id'] ?? $_GET['flight_id'] ?? $_SESSION['active_flight_id'] ?? 0);
+$flight = op_current_flight($conn, (int)$user_id, $chosenFlightId);
 if (!$flight) {
     die("Aktif uçuş bulunamadı.");
 }
+$flight = op_legacy_flight($conn, $flight, 'arrival');
 
 $arrival_processes = ['doorsopening', 'gpu', 'unloading', 'deboarding', 'arrivalcrewcar'];
 
@@ -136,7 +134,7 @@ function handleProcess(button) {
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival',
       action: action,
       process_type: processType
     })
@@ -190,7 +188,7 @@ function applyReset(button) {
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival',
       action: "reset",
       process_type: processType,
       reset_target: target
@@ -244,7 +242,7 @@ function submitSingleButton(button) {
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ action: "mark_time", process_type: type })
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival', action: "mark_time", process_type: type })
   })
   .then(res => res.json())
   .then(data => {
@@ -268,7 +266,7 @@ function resetSingleButton(type) {
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ action: "reset_single", process_type: type })
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival', action: "reset_single", process_type: type })
   })
   .then(res => res.json())
   .then(data => location.reload());
@@ -285,7 +283,7 @@ function submitArrivalData() {
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival',
       action: "save_arrival_data",
       touchdown_time: touchdown_time,
       touchdown_date: touchdown_date,
@@ -310,7 +308,7 @@ function submitDepartureData() {
   fetch("process_handler.php", {
     method: "POST",
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
+    body: new URLSearchParams({ flight_id: <?= (int)$flight['id'] ?>, phase: 'arrival',
       action: "save_departure_data",
       blockfuel: blockfuel,
       ctot: ctot,
