@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/beta_debug.php';
 session_start();
 session_unset();
 session_destroy();
