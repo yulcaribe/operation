@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../beta_debug.php';
 ini_set('session.cookie_domain', '.yulcaribe.com');
 session_start();
 
