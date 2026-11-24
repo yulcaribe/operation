@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/beta_debug.php';
 session_start();
 require_once 'db.php';
 require_once __DIR__ . '/../phpmailer/src/PHPMailer.php';
