@@ -1,4 +1,25 @@
 <?php
+// Geçici login hata kaydi: site disinda, sifre kaydetmeden.
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+ini_set('error_log', '/home/yulcari1/operation-login-errors.log');
+error_reporting(E_ALL);
+
+set_exception_handler(static function (Throwable $e): void {
+    error_log(sprintf('[Operation login][EXCEPTION] %s: %s (%s:%d)', get_class($e), $e->getMessage(), $e->getFile(), $e->getLine()));
+    http_response_code(500);
+    echo 'Giris islemi sirasinda sunucu hatasi olustu.';
+});
+
+register_shutdown_function(static function (): void {
+    $lastError = error_get_last();
+    if ($lastError !== null && in_array($lastError['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        error_log(sprintf('[Operation login][FATAL] %s (%s:%d)', $lastError['message'], $lastError['file'], $lastError['line']));
+    }
+});
+
+error_log('[Operation login] Request started; method=' . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN'));
+
 session_start();
 require_once 'db.php';
 
